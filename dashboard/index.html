@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>DEX Holding Overview</title>
+    <link rel="stylesheet" href="/dashboard/styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="hero-panel">
+        <div class="hero-copy">
+          <p class="eyebrow">DEX Smart Money</p>
+          <h1>Holding Overview</h1>
+          <p class="hero-meta" id="hero-meta">
+            Token overlap dashboard for your tracked Zapper entity clusters.
+          </p>
+        </div>
+
+        <div class="hero-actions">
+          <a class="action-button" href="/dashboard/blacklist.html">Blacklist</a>
+          <button class="action-button action-button--primary" id="refresh-button" type="button">
+            Run Analysis
+          </button>
+          <button class="action-button action-button--secondary" id="cancel-button" type="button" hidden>
+            Cancel Run
+          </button>
+        </div>
+      </section>
+
+      <section class="control-panel">
+        <div class="control-block control-block--wide">
+          <label class="field-label" for="api-key-input">Zapper API Key</label>
+          <input
+            id="api-key-input"
+            type="text"
+            autocomplete="off"
+            spellcheck="false"
+            placeholder="Paste the Zapper API key for this run"
+          />
+        </div>
+        <div class="control-block">
+          <label class="field-label" for="snapshot-select">Snapshot</label>
+          <select id="snapshot-select"></select>
+        </div>
+        <div class="control-block">
+          <label class="field-label" for="min-balance-input">Min Entity Balance USD</label>
+          <input id="min-balance-input" type="number" min="0" step="1" value="100" />
+        </div>
+        <div class="control-block">
+          <label class="field-label" for="min-smw-input">Min SMW In</label>
+          <input id="min-smw-input" type="number" min="1" step="1" value="3" />
+        </div>
+        <div class="summary-strip">
+          <span class="pill" id="summary-status">Idle</span>
+          <span class="pill" id="summary-entities">0 entities</span>
+          <span class="pill" id="summary-rows">0 rows</span>
+        </div>
+      </section>
+
+      <section class="activity-panel">
+        <div class="activity-panel__header">
+          <div>
+            <h2>Refresh Activity</h2>
+            <p class="side-note" id="activity-subtitle">Run the refresh and watch live progress here.</p>
+          </div>
+          <span class="pill" id="job-status">IDLE</span>
+        </div>
+
+        <div class="progress-card">
+          <div class="progress-meta">
+            <span id="job-progress-label">No refresh running.</span>
+            <span id="job-progress-count">0/0 entities</span>
+          </div>
+          <div class="progress-track" aria-hidden="true">
+            <div class="progress-fill" id="job-progress-fill"></div>
+          </div>
+        </div>
+
+        <div class="log-stream" id="log-stream">
+          <div class="empty-note">No refresh logs yet.</div>
+        </div>
+      </section>
+
+      <section class="workspace-grid">
+        <section class="table-panel">
+          <div class="table-topline">
+            <div>
+              <h2>DEX Holding Overview</h2>
+              <p id="table-subtitle">
+                Tokens held by multiple tracked entities across your tracked Zapper clusters.
+              </p>
+            </div>
+            <div class="table-status" id="table-status">0 rows</div>
+          </div>
+
+          <div class="status-banner" id="status-banner" hidden></div>
+
+          <div class="table-wrap">
+            <table class="signals-table">
+              <thead>
+                <tr>
+                  <th>Ticker</th>
+                  <th>Token Name</th>
+                  <th>Chain</th>
+                  <th>
+                    <button class="sort-button" type="button" data-sort-key="holdingsUsd">
+                      <span>Holdings</span>
+                      <span class="sort-indicator" aria-hidden="true">-</span>
+                    </button>
+                  </th>
+                  <th>
+                    <button class="sort-button" type="button" data-sort-key="smwIn">
+                      <span>SMW In</span>
+                      <span class="sort-indicator" aria-hidden="true">-</span>
+                    </button>
+                  </th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody id="table-body"></tbody>
+            </table>
+          </div>
+        </section>
+      </section>
+    </main>
+
+    <script src="/dashboard/main.js" defer></script>
+  </body>
+</html>

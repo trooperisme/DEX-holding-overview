@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>DEX Holding Overview · Blacklist</title>
+    <link rel="stylesheet" href="/dashboard/styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="hero-panel">
+        <div class="hero-copy">
+          <p class="eyebrow">DEX Smart Money</p>
+          <h1>Blacklist</h1>
+          <p class="hero-meta" id="blacklist-hero-meta">Hidden forever unless you restore them here.</p>
+        </div>
+
+        <div class="hero-actions">
+          <a class="action-button" href="/dashboard">Back to Overview</a>
+        </div>
+      </section>
+
+      <section class="table-panel table-panel--solo">
+        <div class="table-topline">
+          <div>
+            <h2>Blacklisted Tokens</h2>
+            <p id="blacklist-subtitle">Persistent hidden tokens for the DEX overview dashboard.</p>
+          </div>
+          <div class="table-status" id="blacklist-status">0 rows</div>
+        </div>
+
+        <div class="status-banner" id="blacklist-banner" hidden></div>
+
+        <div class="blacklist-list blacklist-list--page" id="blacklist-list"></div>
+      </section>
+    </main>
+
+    <script src="/dashboard/blacklist.js" defer></script>
+  </body>
+</html>
