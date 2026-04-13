@@ -365,11 +365,28 @@ function renderTable() {
     .map((row) => {
       const isOpen = row.tokenKey === state.openTokenKey;
       const networkBadge = row.networkName ? `<span class="network-badge">${escapeHtml(row.networkName)}</span>` : "";
+      const copyButton = row.tokenAddress
+        ? `
+            <button
+              class="copy-contract-button"
+              type="button"
+              data-copy-contract="${escapeHtml(row.tokenAddress)}"
+              data-copy-symbol="${escapeHtml(row.tokenSymbol)}"
+              aria-label="Copy ${escapeHtml(row.tokenSymbol)} contract"
+              title="Copy contract"
+            >
+              <span class="copy-contract-button__icon" aria-hidden="true"></span>
+            </button>
+          `
+        : "";
       return `
         <tr class="signal-row ${isOpen ? "is-open" : ""}" data-token-key="${escapeHtml(row.tokenKey)}">
           <td class="ticker-cell">
             <div class="ticker-stack">
-              <span class="ticker-main">${escapeHtml(row.tokenSymbol)}</span>
+              <div class="ticker-mainline">
+                <span class="ticker-main">${escapeHtml(row.tokenSymbol)}</span>
+                ${copyButton}
+              </div>
             </div>
           </td>
           <td>
@@ -484,6 +501,21 @@ async function handleCancel() {
 document.addEventListener("click", async (event) => {
   const target = event.target;
   if (!(target instanceof HTMLElement)) return;
+
+  const copyButton = target.closest("[data-copy-contract]");
+  if (copyButton instanceof HTMLElement) {
+    event.stopPropagation();
+    const contract = copyButton.dataset.copyContract;
+    const symbol = copyButton.dataset.copySymbol || "Token";
+    if (!contract) return;
+    try {
+      await navigator.clipboard.writeText(contract);
+      setBanner(`${symbol} contract copied to clipboard.`, "success");
+    } catch (_error) {
+      setBanner("Copy failed. Your browser blocked clipboard access.", "danger");
+    }
+    return;
+  }
 
   const sortButton = target.closest("[data-sort-key]");
   if (sortButton instanceof HTMLElement) {
