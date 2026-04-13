@@ -13,13 +13,17 @@ const paths = resolveWorkspacePaths(cwd);
 const refreshJobs = createRefreshJobManager(cwd);
 
 app.use(express.json());
-app.use("/dashboard", express.static(paths.dashboardDir, { index: false }));
+app.use("/dashboard", express.static(paths.dashboardDir));
 
 app.get("/", (_req, res) => {
   res.redirect("/dashboard");
 });
 
 app.get("/dashboard", (_req, res) => {
+  res.redirect("/dashboard/");
+});
+
+app.get("/dashboard/", (_req, res) => {
   res.sendFile(path.join(paths.dashboardDir, "index.html"));
 });
 
