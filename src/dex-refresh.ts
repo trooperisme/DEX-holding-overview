@@ -51,13 +51,16 @@ function emitProgress(callbacks: RefreshCallbacks, partial: Partial<RefreshProgr
 async function enrichSnapshotMarketData(options: {
   storage: ReturnType<typeof createStorage>;
   snapshotId: number;
+  totalEntities: number;
   apiKey: string;
   signal?: AbortSignal;
   callbacks: RefreshCallbacks;
 }): Promise<{ attempted: number; enriched: number; failed: number }> {
+  const minSmwInForEnrichment = options.totalEntities <= 1 ? 1 : 3;
   const snapshotTokens = options.storage
-    .getSnapshotTokensForEnrichment(options.snapshotId)
-    .filter((token) => token.tokenAddress && Number.isFinite(Number(token.chainId)));
+    .getSnapshotTokensForEnrichment(options.snapshotId, 100, minSmwInForEnrichment)
+    .filter((token) => token.tokenAddress && Number.isFinite(Number(token.chainId)))
+    .slice(0, options.totalEntities <= 1 ? 25 : undefined);
 
   if (!snapshotTokens.length) {
     emitLog(options.callbacks, "info", "No enrichable token contracts found for market-cap/liquidity lookup.");
@@ -72,34 +75,29 @@ async function enrichSnapshotMarketData(options: {
 
   let enriched = 0;
   let failed = 0;
-  const concurrency = 4;
 
-  for (let index = 0; index < snapshotTokens.length; index += concurrency) {
+  for (const [index, token] of snapshotTokens.entries()) {
     if (options.signal?.aborted) {
       throw new DOMException("Refresh canceled", "AbortError");
     }
-    const batch = snapshotTokens.slice(index, index + concurrency);
-    const results = await Promise.allSettled(
-      batch.map(async (token) => {
-        const marketData = await fetchZapperTokenMarketData(
-          options.apiKey,
-          token.tokenAddress!,
-          Number(token.chainId),
-          options.signal,
-        );
-        options.storage.updateSnapshotTokenMarketData(options.snapshotId, token.tokenKey, marketData);
-        return { token, marketData };
-      }),
-    );
 
-    for (const result of results) {
-      if (result.status === "fulfilled") {
-        enriched += 1;
-        continue;
-      }
+    if (index > 0) {
+      await new Promise((resolve) => setTimeout(resolve, 350));
+    }
+
+    try {
+      const marketData = await fetchZapperTokenMarketData(
+        options.apiKey,
+        token.tokenAddress!,
+        Number(token.chainId),
+        options.signal,
+      );
+      options.storage.updateSnapshotTokenMarketData(options.snapshotId, token.tokenKey, marketData);
+      enriched += 1;
+    } catch (error) {
       failed += 1;
-      const message = result.reason instanceof Error ? result.reason.message : String(result.reason);
-      emitLog(options.callbacks, "warning", `Market-data lookup skipped for one token: ${message}`);
+      const message = error instanceof Error ? error.message : String(error);
+      emitLog(options.callbacks, "warning", `Market-data lookup skipped for ${token.tokenSymbol}: ${message}`);
     }
   }
 
@@ -302,6 +300,7 @@ export async function runDexRefresh(options: {
       const enrichment = await enrichSnapshotMarketData({
         storage,
         snapshotId,
+        totalEntities,
         apiKey: options.apiKey,
         signal,
         callbacks,
@@ -313,7 +312,7 @@ export async function runDexRefresh(options: {
       ? "canceled"
       : entitiesCompleted === 0 && entitiesFailed > 0
         ? "failed"
-        : entitiesFailed > 0 || enrichmentFailed > 0
+        : entitiesFailed > 0
           ? "partial"
           : "success";
 
@@ -322,9 +321,7 @@ export async function runDexRefresh(options: {
         ? "All entity fetches failed"
         : status === "canceled"
           ? "Refresh canceled by user"
-          : enrichmentFailed > 0
-            ? `${enrichmentFailed} token market-data lookups failed`
-            : null;
+          : null;
 
     storage.updateSnapshot({
       id: snapshotId,
@@ -360,6 +357,14 @@ export async function runDexRefresh(options: {
       emitLog(callbacks, "warning", `Refresh canceled after ${entitiesCompleted} completed and ${entitiesFailed} failed.`);
     } else {
       emitLog(callbacks, "error", "All entity fetches failed.");
+    }
+
+    if (enrichmentFailed > 0) {
+      emitLog(
+        callbacks,
+        "warning",
+        `${enrichmentFailed} market-data lookups were skipped. Liquidity filtering is best-effort for this snapshot.`,
+      );
     }
 
     return {

@@ -20,6 +20,8 @@ type SnapshotTokenForEnrichment = {
   tokenAddress: string | null;
   networkName: string;
   chainId: number | null;
+  smwIn: number;
+  holdingsUsd: number;
 };
 
 type SnapshotUpdate = {
@@ -375,7 +377,7 @@ export function createStorage(cwd: string) {
       );
     },
 
-    getSnapshotTokensForEnrichment(snapshotId: number): SnapshotTokenForEnrichment[] {
+    getSnapshotTokensForEnrichment(snapshotId: number, minBalanceUsd = 100, minSmwIn = 3): SnapshotTokenForEnrichment[] {
       return db
         .prepare(
           `SELECT
@@ -384,13 +386,17 @@ export function createStorage(cwd: string) {
               MAX(rh.token_name) as tokenName,
               MAX(rh.token_address) as tokenAddress,
               MAX(rh.network_name) as networkName,
-              MAX(rh.chain_id) as chainId
+              MAX(rh.chain_id) as chainId,
+              COUNT(DISTINCT rh.entity_id) as smwIn,
+              ROUND(SUM(rh.balance_usd), 2) as holdingsUsd
            FROM raw_holdings rh
            WHERE rh.snapshot_id = ?
+             AND rh.balance_usd >= ?
            GROUP BY rh.token_key
-           ORDER BY tokenSymbol COLLATE NOCASE ASC`,
+           HAVING COUNT(DISTINCT rh.entity_id) >= ?
+           ORDER BY smwIn DESC, holdingsUsd DESC, tokenSymbol COLLATE NOCASE ASC`,
         )
-        .all(snapshotId) as SnapshotTokenForEnrichment[];
+        .all(snapshotId, minBalanceUsd, minSmwIn) as SnapshotTokenForEnrichment[];
     },
 
     getOverview(snapshotId: number, minBalanceUsd = 100, minSmwIn = 3, minLiquidityUsd = 11111): TokenOverviewRow[] {
@@ -415,12 +421,10 @@ export function createStorage(cwd: string) {
              AND bl.id IS NULL
            GROUP BY rh.token_key
            HAVING COUNT(DISTINCT rh.entity_id) >= ?
-             AND MAX(
-               CASE
-                 WHEN rh.token_address IS NULL THEN 999999999
-                 ELSE COALESCE(rh.liquidity_usd, 0)
-               END
-             ) >= ?
+             AND (
+               MAX(CASE WHEN rh.token_address IS NOT NULL THEN rh.liquidity_usd END) IS NULL
+               OR MAX(CASE WHEN rh.token_address IS NOT NULL THEN rh.liquidity_usd END) >= ?
+             )
            ORDER BY smwIn DESC, holdingsUsd DESC, tokenSymbol COLLATE NOCASE ASC`,
         )
         .all(snapshotId, minBalanceUsd, minSmwIn, minLiquidityUsd) as TokenOverviewRow[];

@@ -453,7 +453,7 @@ async function loadOverview() {
   });
   const payload = await fetchJson(`/api/overview?${params.toString()}`);
   state.rows = Array.isArray(payload.rows) ? payload.rows : [];
-  els.tableSubtitle.textContent = `Snapshot #${state.selectedSnapshotId} filtered at ${fmtUsd(minBalanceUsd)} minimum entity balance, SMW In >= ${minSmwIn}, and liquidity >= ${fmtUsd(minLiquidityUsd)}.`;
+  els.tableSubtitle.textContent = `Snapshot #${state.selectedSnapshotId} filtered at ${fmtUsd(minBalanceUsd)} minimum entity balance, SMW In >= ${minSmwIn}, and verified liquidity >= ${fmtUsd(minLiquidityUsd)} when available.`;
   renderTable();
 }
 
