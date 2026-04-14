@@ -46,6 +46,7 @@ app.get("/api/overview", (req, res) => {
   const snapshotId = Number(req.query.snapshotId || 0);
   const minBalanceUsd = Number(req.query.minBalanceUsd || 100);
   const minSmwIn = Number(req.query.minSmwIn || 3);
+  const minLiquidityUsd = Number(req.query.minLiquidityUsd || 11111);
   if (!Number.isFinite(snapshotId) || snapshotId <= 0) {
     res.status(400).json({ error: "snapshotId is required" });
     return;
@@ -54,7 +55,7 @@ app.get("/api/overview", (req, res) => {
   const storage = createStorage(cwd);
   try {
     res.json({
-      rows: storage.getOverview(snapshotId, minBalanceUsd, minSmwIn),
+      rows: storage.getOverview(snapshotId, minBalanceUsd, minSmwIn, minLiquidityUsd),
     });
   } finally {
     storage.close();

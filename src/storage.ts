@@ -13,6 +13,15 @@ import {
   TokenOverviewRow,
 } from "./types";
 
+type SnapshotTokenForEnrichment = {
+  tokenKey: string;
+  tokenSymbol: string;
+  tokenName: string;
+  tokenAddress: string | null;
+  networkName: string;
+  chainId: number | null;
+};
+
 type SnapshotUpdate = {
   id: number;
   status?: SnapshotStatus;
@@ -26,6 +35,13 @@ type SnapshotUpdate = {
 export function createStorage(cwd: string) {
   const paths = resolveWorkspacePaths(cwd);
   const db = new Database(paths.dbFile);
+
+  function ensureColumn(tableName: string, columnName: string, definition: string): void {
+    const columns = db.prepare(`PRAGMA table_info(${tableName})`).all() as Array<{ name: string }>;
+    if (!columns.some((column) => column.name === columnName)) {
+      db.exec(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${definition}`);
+    }
+  }
 
   db.exec(`
     PRAGMA foreign_keys = ON;
@@ -91,6 +107,8 @@ export function createStorage(cwd: string) {
       balance_raw TEXT NOT NULL,
       balance_usd REAL NOT NULL,
       price REAL,
+      market_cap REAL,
+      liquidity_usd REAL,
       fetched_at TEXT NOT NULL,
       FOREIGN KEY (snapshot_id) REFERENCES holding_snapshots(id) ON DELETE CASCADE,
       FOREIGN KEY (entity_id) REFERENCES entities(id) ON DELETE CASCADE
@@ -114,6 +132,9 @@ export function createStorage(cwd: string) {
     CREATE INDEX IF NOT EXISTS idx_raw_holdings_snapshot ON raw_holdings(snapshot_id, token_key, balance_usd DESC);
     CREATE INDEX IF NOT EXISTS idx_snapshot_created ON holding_snapshots(created_at DESC, id DESC);
   `);
+
+  ensureColumn("raw_holdings", "market_cap", "REAL");
+  ensureColumn("raw_holdings", "liquidity_usd", "REAL");
 
   const upsertEntity = db.prepare(`
     INSERT INTO entities (entity_name, full_zapper_link, resolved_label, link_type, created_at, updated_at)
@@ -173,11 +194,19 @@ export function createStorage(cwd: string) {
   const insertRawHoldingStmt = db.prepare(`
     INSERT INTO raw_holdings (
       snapshot_id, entity_id, token_key, token_symbol, token_name, token_address, network_name,
-      chain_id, balance, balance_raw, balance_usd, price, fetched_at
+      chain_id, balance, balance_raw, balance_usd, price, market_cap, liquidity_usd, fetched_at
     ) VALUES (
       @snapshotId, @entityId, @tokenKey, @tokenSymbol, @tokenName, @tokenAddress, @networkName,
-      @chainId, @balance, @balanceRaw, @balanceUsd, @price, @fetchedAt
+      @chainId, @balance, @balanceRaw, @balanceUsd, @price, @marketCap, @liquidityUsd, @fetchedAt
     )
+  `);
+
+  const updateMarketDataForTokenStmt = db.prepare(`
+    UPDATE raw_holdings
+    SET market_cap = @marketCap,
+        liquidity_usd = @liquidityUsd
+    WHERE snapshot_id = @snapshotId
+      AND token_key = @tokenKey
   `);
 
   const blacklistUpsertStmt = db.prepare(`
@@ -305,6 +334,18 @@ export function createStorage(cwd: string) {
 
     insertRawHoldingsForEntity,
 
+    updateSnapshotTokenMarketData(snapshotId: number, tokenKey: string, marketData: {
+      marketCap: number | null;
+      liquidityUsd: number | null;
+    }): void {
+      updateMarketDataForTokenStmt.run({
+        snapshotId,
+        tokenKey,
+        marketCap: marketData.marketCap,
+        liquidityUsd: marketData.liquidityUsd,
+      });
+    },
+
     getSnapshotSummaries(): SnapshotRecord[] {
       return db
         .prepare(
@@ -334,7 +375,25 @@ export function createStorage(cwd: string) {
       );
     },
 
-    getOverview(snapshotId: number, minBalanceUsd = 100, minSmwIn = 3): TokenOverviewRow[] {
+    getSnapshotTokensForEnrichment(snapshotId: number): SnapshotTokenForEnrichment[] {
+      return db
+        .prepare(
+          `SELECT
+              rh.token_key as tokenKey,
+              MAX(rh.token_symbol) as tokenSymbol,
+              MAX(rh.token_name) as tokenName,
+              MAX(rh.token_address) as tokenAddress,
+              MAX(rh.network_name) as networkName,
+              MAX(rh.chain_id) as chainId
+           FROM raw_holdings rh
+           WHERE rh.snapshot_id = ?
+           GROUP BY rh.token_key
+           ORDER BY tokenSymbol COLLATE NOCASE ASC`,
+        )
+        .all(snapshotId) as SnapshotTokenForEnrichment[];
+    },
+
+    getOverview(snapshotId: number, minBalanceUsd = 100, minSmwIn = 3, minLiquidityUsd = 11111): TokenOverviewRow[] {
       return db
         .prepare(
           `SELECT
@@ -346,7 +405,7 @@ export function createStorage(cwd: string) {
               MAX(rh.token_address) as tokenAddress,
               ROUND(SUM(rh.balance_usd), 2) as holdingsUsd,
               COUNT(DISTINCT rh.entity_id) as smwIn,
-              NULL as marketCap,
+              MAX(rh.market_cap) as marketCap,
               NULL as tokenAgeHours
            FROM raw_holdings rh
            LEFT JOIN token_blacklist bl
@@ -356,9 +415,15 @@ export function createStorage(cwd: string) {
              AND bl.id IS NULL
            GROUP BY rh.token_key
            HAVING COUNT(DISTINCT rh.entity_id) >= ?
+             AND MAX(
+               CASE
+                 WHEN rh.token_address IS NULL THEN 999999999
+                 ELSE COALESCE(rh.liquidity_usd, 0)
+               END
+             ) >= ?
            ORDER BY smwIn DESC, holdingsUsd DESC, tokenSymbol COLLATE NOCASE ASC`,
         )
-        .all(snapshotId, minBalanceUsd, minSmwIn) as TokenOverviewRow[];
+        .all(snapshotId, minBalanceUsd, minSmwIn, minLiquidityUsd) as TokenOverviewRow[];
     },
 
     getTokenHolders(snapshotId: number, tokenKey: string, minBalanceUsd = 100): TokenHolderRow[] {

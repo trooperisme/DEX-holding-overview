@@ -63,6 +63,8 @@ export type ZapperTokenBalance = {
   balanceRaw: string;
   balanceUsd: number;
   price: number | null;
+  marketCap: number | null;
+  liquidityUsd: number | null;
 };
 
 export type RawHoldingRecord = {
@@ -78,6 +80,8 @@ export type RawHoldingRecord = {
   balanceRaw: string;
   balanceUsd: number;
   price: number | null;
+  marketCap: number | null;
+  liquidityUsd: number | null;
   fetchedAt: string;
 };
 

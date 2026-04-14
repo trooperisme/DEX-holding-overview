@@ -53,6 +53,12 @@ function fmtUsd(value) {
   });
 }
 
+function fmtUsdOrDash(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric <= 0) return "—";
+  return fmtUsd(numeric);
+}
+
 function fmtDate(value) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "Unknown";
@@ -351,7 +357,7 @@ function renderTable() {
   if (!rows.length) {
     els.tableBody.innerHTML = `
         <tr>
-        <td colspan="6">
+        <td colspan="7">
           <div class="drilldown-panel">
             <div class="empty-note">No token rows match the current snapshot and filters.</div>
           </div>
@@ -395,6 +401,7 @@ function renderTable() {
               <span>Click to view entity holders</span>
             </div>
           </td>
+          <td>${escapeHtml(fmtUsdOrDash(row.marketCap))}</td>
           <td>${networkBadge || '<span class="chain-text">Unknown</span>'}</td>
           <td>${escapeHtml(fmtUsd(row.holdingsUsd))}</td>
           <td>${escapeHtml(String(row.smwIn))}</td>
@@ -408,7 +415,7 @@ function renderTable() {
           isOpen
             ? `
               <tr class="drilldown-row">
-                <td colspan="6">${buildDrilldown(row.tokenKey)}</td>
+                <td colspan="7">${buildDrilldown(row.tokenKey)}</td>
               </tr>
             `
             : ""
@@ -437,14 +444,16 @@ async function loadOverview() {
 
   const minBalanceUsd = Number(els.minBalanceInput.value || 100);
   const minSmwIn = Number(els.minSmwInput.value || 3);
+  const minLiquidityUsd = 11111;
   const params = new URLSearchParams({
     snapshotId: String(state.selectedSnapshotId),
     minBalanceUsd: String(minBalanceUsd),
     minSmwIn: String(minSmwIn),
+    minLiquidityUsd: String(minLiquidityUsd),
   });
   const payload = await fetchJson(`/api/overview?${params.toString()}`);
   state.rows = Array.isArray(payload.rows) ? payload.rows : [];
-  els.tableSubtitle.textContent = `Snapshot #${state.selectedSnapshotId} filtered at ${fmtUsd(minBalanceUsd)} minimum entity balance and SMW In >= ${minSmwIn}.`;
+  els.tableSubtitle.textContent = `Snapshot #${state.selectedSnapshotId} filtered at ${fmtUsd(minBalanceUsd)} minimum entity balance, SMW In >= ${minSmwIn}, and liquidity >= ${fmtUsd(minLiquidityUsd)}.`;
   renderTable();
 }
 

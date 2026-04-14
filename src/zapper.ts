@@ -28,6 +28,17 @@ const TOKEN_BALANCES_QUERY = `
   }
 `;
 
+const FUNGIBLE_TOKEN_MARKET_DATA_QUERY = `
+  query TokenMarketData($address: Address!, $chainId: Int!) {
+    fungibleTokenV2(address: $address, chainId: $chainId) {
+      priceData {
+        marketCap
+        totalLiquidity
+      }
+    }
+  }
+`;
+
 export async function fetchZapperTokenBalances(
   apiKey: string,
   addresses: string[],
@@ -105,6 +116,8 @@ export async function fetchZapperTokenBalances(
         balanceRaw: String(node.balanceRaw || "0"),
         balanceUsd: Number(node.balanceUSD || 0),
         price: node.price ?? null,
+        marketCap: null,
+        liquidityUsd: null,
       };
     }) || [];
 
@@ -112,5 +125,57 @@ export async function fetchZapperTokenBalances(
     totalBalanceUsd: Number(tokenBalances?.totalBalanceUSD || 0),
     totalCount: Number(tokenBalances?.byToken?.totalCount || balances.length),
     balances,
+  };
+}
+
+export async function fetchZapperTokenMarketData(
+  apiKey: string,
+  tokenAddress: string,
+  chainId: number,
+  signal?: AbortSignal,
+): Promise<{
+  marketCap: number | null;
+  liquidityUsd: number | null;
+}> {
+  const response = await fetch("https://public.zapper.xyz/graphql", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-zapper-api-key": apiKey,
+    },
+    signal,
+    body: JSON.stringify({
+      query: FUNGIBLE_TOKEN_MARKET_DATA_QUERY,
+      variables: {
+        address: tokenAddress,
+        chainId,
+      },
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Zapper token market-data request failed with ${response.status}`);
+  }
+
+  const payload = (await response.json()) as {
+    errors?: Array<{ message?: string }>;
+    data?: {
+      fungibleTokenV2?: {
+        priceData?: {
+          marketCap?: number | null;
+          totalLiquidity?: number | null;
+        } | null;
+      } | null;
+    };
+  };
+
+  if (payload.errors?.length) {
+    const message = payload.errors.map((item) => item.message || "Unknown error").join("; ");
+    throw new Error(message);
+  }
+
+  return {
+    marketCap: payload.data?.fungibleTokenV2?.priceData?.marketCap ?? null,
+    liquidityUsd: payload.data?.fungibleTokenV2?.priceData?.totalLiquidity ?? null,
   };
 }
