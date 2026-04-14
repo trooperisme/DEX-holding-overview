@@ -1,7 +1,12 @@
+import {
+  fetchDexScreenerMarketData,
+  type DexScreenerMarketData,
+  toDexScreenerChainId,
+} from "./dexscreener";
 import { loadImportedEntities, maskApiKey, toTokenKey } from "./entities";
 import { resolveWorkspacePaths } from "./runtime-paths";
 import { createStorage } from "./storage";
-import { fetchZapperTokenBalances, fetchZapperTokenMarketData } from "./zapper";
+import { fetchZapperTokenBalances } from "./zapper";
 import {
   RawHoldingRecord,
   RefreshJobState,
@@ -59,54 +64,69 @@ async function enrichSnapshotMarketData(options: {
   const minSmwInForEnrichment = options.totalEntities <= 1 ? 1 : 3;
   const snapshotTokens = options.storage
     .getSnapshotTokensForEnrichment(options.snapshotId, 100, minSmwInForEnrichment)
-    .filter((token) => token.tokenAddress && Number.isFinite(Number(token.chainId)))
+    .filter(
+      (token) =>
+        token.tokenAddress &&
+        toDexScreenerChainId(token.chainId, token.networkName),
+    )
     .slice(0, options.totalEntities <= 1 ? 25 : undefined);
 
   if (!snapshotTokens.length) {
-    emitLog(options.callbacks, "info", "No enrichable token contracts found for market-cap/liquidity lookup.");
+    emitLog(options.callbacks, "info", "No enrichable token contracts found for DexScreener market-data lookup.");
     return { attempted: 0, enriched: 0, failed: 0 };
   }
 
   emitLog(
     options.callbacks,
     "info",
-    `Enriching ${snapshotTokens.length} unique tokens with market cap and liquidity data.`,
+    `Enriching ${snapshotTokens.length} unique tokens with DexScreener liquidity, volume, txns, market cap, and age data.`,
   );
+
+  let marketDataByTokenAddress: Map<string, DexScreenerMarketData>;
+  try {
+    marketDataByTokenAddress = await fetchDexScreenerMarketData(
+      snapshotTokens.map((token) => ({
+        tokenAddress: token.tokenAddress!,
+        chainId: token.chainId,
+        networkName: token.networkName,
+      })),
+    );
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    emitLog(options.callbacks, "warning", `DexScreener enrichment skipped: ${message}`);
+    return { attempted: snapshotTokens.length, enriched: 0, failed: snapshotTokens.length };
+  }
 
   let enriched = 0;
   let failed = 0;
 
-  for (const [index, token] of snapshotTokens.entries()) {
+  for (const token of snapshotTokens) {
     if (options.signal?.aborted) {
       throw new DOMException("Refresh canceled", "AbortError");
     }
 
-    if (index > 0) {
-      await new Promise((resolve) => setTimeout(resolve, 350));
+    const dexChainId = toDexScreenerChainId(token.chainId, token.networkName);
+    const marketData =
+      dexChainId && token.tokenAddress
+        ? marketDataByTokenAddress.get(`${dexChainId}:${token.tokenAddress.toLowerCase()}`)
+        : null;
+
+    if (!marketData) {
+      failed += 1;
+      emitLog(options.callbacks, "warning", `DexScreener market-data lookup returned no pair for ${token.tokenSymbol}.`);
+      continue;
     }
 
-    try {
-      const marketData = await fetchZapperTokenMarketData(
-        options.apiKey,
-        token.tokenAddress!,
-        Number(token.chainId),
-        options.signal,
-      );
-      options.storage.updateSnapshotTokenMarketData(options.snapshotId, token.tokenKey, marketData);
-      enriched += 1;
-    } catch (error) {
-      failed += 1;
-      const message = error instanceof Error ? error.message : String(error);
-      emitLog(options.callbacks, "warning", `Market-data lookup skipped for ${token.tokenSymbol}: ${message}`);
-    }
+    options.storage.updateSnapshotTokenMarketData(options.snapshotId, token.tokenKey, marketData);
+    enriched += 1;
   }
 
   emitLog(
     options.callbacks,
     failed > 0 ? "warning" : "success",
     failed > 0
-      ? `Market-data enrichment finished: ${enriched}/${snapshotTokens.length} enriched, ${failed} failed.`
-      : `Market-data enrichment finished: ${enriched}/${snapshotTokens.length} enriched.`,
+      ? `DexScreener enrichment finished: ${enriched}/${snapshotTokens.length} enriched, ${failed} missing pair data.`
+      : `DexScreener enrichment finished: ${enriched}/${snapshotTokens.length} enriched.`,
   );
 
   return {
@@ -213,6 +233,9 @@ export async function runDexRefresh(options: {
           price: holding.price,
           marketCap: holding.marketCap,
           liquidityUsd: holding.liquidityUsd,
+          volume24h: holding.volume24h,
+          txns24h: holding.txns24h,
+          tokenAgeHours: holding.tokenAgeHours,
           fetchedAt,
         }));
 

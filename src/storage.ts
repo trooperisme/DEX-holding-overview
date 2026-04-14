@@ -111,6 +111,9 @@ export function createStorage(cwd: string) {
       price REAL,
       market_cap REAL,
       liquidity_usd REAL,
+      volume_24h REAL,
+      txns_24h REAL,
+      token_age_hours REAL,
       fetched_at TEXT NOT NULL,
       FOREIGN KEY (snapshot_id) REFERENCES holding_snapshots(id) ON DELETE CASCADE,
       FOREIGN KEY (entity_id) REFERENCES entities(id) ON DELETE CASCADE
@@ -137,6 +140,9 @@ export function createStorage(cwd: string) {
 
   ensureColumn("raw_holdings", "market_cap", "REAL");
   ensureColumn("raw_holdings", "liquidity_usd", "REAL");
+  ensureColumn("raw_holdings", "volume_24h", "REAL");
+  ensureColumn("raw_holdings", "txns_24h", "REAL");
+  ensureColumn("raw_holdings", "token_age_hours", "REAL");
 
   const upsertEntity = db.prepare(`
     INSERT INTO entities (entity_name, full_zapper_link, resolved_label, link_type, created_at, updated_at)
@@ -196,17 +202,22 @@ export function createStorage(cwd: string) {
   const insertRawHoldingStmt = db.prepare(`
     INSERT INTO raw_holdings (
       snapshot_id, entity_id, token_key, token_symbol, token_name, token_address, network_name,
-      chain_id, balance, balance_raw, balance_usd, price, market_cap, liquidity_usd, fetched_at
+      chain_id, balance, balance_raw, balance_usd, price, market_cap, liquidity_usd, volume_24h, txns_24h,
+      token_age_hours, fetched_at
     ) VALUES (
       @snapshotId, @entityId, @tokenKey, @tokenSymbol, @tokenName, @tokenAddress, @networkName,
-      @chainId, @balance, @balanceRaw, @balanceUsd, @price, @marketCap, @liquidityUsd, @fetchedAt
+      @chainId, @balance, @balanceRaw, @balanceUsd, @price, @marketCap, @liquidityUsd, @volume24h, @txns24h,
+      @tokenAgeHours, @fetchedAt
     )
   `);
 
   const updateMarketDataForTokenStmt = db.prepare(`
     UPDATE raw_holdings
     SET market_cap = @marketCap,
-        liquidity_usd = @liquidityUsd
+        liquidity_usd = @liquidityUsd,
+        volume_24h = @volume24h,
+        txns_24h = @txns24h,
+        token_age_hours = @tokenAgeHours
     WHERE snapshot_id = @snapshotId
       AND token_key = @tokenKey
   `);
@@ -339,12 +350,18 @@ export function createStorage(cwd: string) {
     updateSnapshotTokenMarketData(snapshotId: number, tokenKey: string, marketData: {
       marketCap: number | null;
       liquidityUsd: number | null;
+      volume24h: number | null;
+      txns24h: number | null;
+      tokenAgeHours: number | null;
     }): void {
       updateMarketDataForTokenStmt.run({
         snapshotId,
         tokenKey,
         marketCap: marketData.marketCap,
         liquidityUsd: marketData.liquidityUsd,
+        volume24h: marketData.volume24h,
+        txns24h: marketData.txns24h,
+        tokenAgeHours: marketData.tokenAgeHours,
       });
     },
 
@@ -412,7 +429,9 @@ export function createStorage(cwd: string) {
               ROUND(SUM(rh.balance_usd), 2) as holdingsUsd,
               COUNT(DISTINCT rh.entity_id) as smwIn,
               MAX(rh.market_cap) as marketCap,
-              NULL as tokenAgeHours
+              MAX(rh.token_age_hours) as tokenAgeHours,
+              MAX(rh.volume_24h) as volume24h,
+              MAX(rh.txns_24h) as txns24h
            FROM raw_holdings rh
            LEFT JOIN token_blacklist bl
              ON bl.token_key = rh.token_key AND bl.is_active = 1
@@ -424,6 +443,14 @@ export function createStorage(cwd: string) {
              AND (
                MAX(CASE WHEN rh.token_address IS NOT NULL THEN rh.liquidity_usd END) IS NULL
                OR MAX(CASE WHEN rh.token_address IS NOT NULL THEN rh.liquidity_usd END) >= ?
+             )
+             AND (
+               MAX(CASE WHEN rh.token_address IS NOT NULL THEN rh.volume_24h END) IS NULL
+               OR MAX(CASE WHEN rh.token_address IS NOT NULL THEN rh.volume_24h END) >= 1000
+             )
+             AND (
+               MAX(CASE WHEN rh.token_address IS NOT NULL THEN rh.txns_24h END) IS NULL
+               OR MAX(CASE WHEN rh.token_address IS NOT NULL THEN rh.txns_24h END) >= 333
              )
            ORDER BY smwIn DESC, holdingsUsd DESC, tokenSymbol COLLATE NOCASE ASC`,
         )

@@ -357,7 +357,7 @@ function renderTable() {
   if (!rows.length) {
     els.tableBody.innerHTML = `
         <tr>
-        <td colspan="7">
+        <td colspan="8">
           <div class="drilldown-panel">
             <div class="empty-note">No token rows match the current snapshot and filters.</div>
           </div>
@@ -403,6 +403,7 @@ function renderTable() {
           </td>
           <td>${escapeHtml(fmtUsdOrDash(row.marketCap))}</td>
           <td>${networkBadge || '<span class="chain-text">Unknown</span>'}</td>
+          <td>${escapeHtml(fmtTokenAge(row.tokenAgeHours))}</td>
           <td>${escapeHtml(fmtUsd(row.holdingsUsd))}</td>
           <td>${escapeHtml(String(row.smwIn))}</td>
           <td>
@@ -415,7 +416,7 @@ function renderTable() {
           isOpen
             ? `
               <tr class="drilldown-row">
-                <td colspan="7">${buildDrilldown(row.tokenKey)}</td>
+                <td colspan="8">${buildDrilldown(row.tokenKey)}</td>
               </tr>
             `
             : ""
@@ -453,7 +454,7 @@ async function loadOverview() {
   });
   const payload = await fetchJson(`/api/overview?${params.toString()}`);
   state.rows = Array.isArray(payload.rows) ? payload.rows : [];
-  els.tableSubtitle.textContent = `Snapshot #${state.selectedSnapshotId} filtered at ${fmtUsd(minBalanceUsd)} minimum entity balance, SMW In >= ${minSmwIn}, and verified liquidity >= ${fmtUsd(minLiquidityUsd)} when available.`;
+  els.tableSubtitle.textContent = `Snapshot #${state.selectedSnapshotId} filtered at ${fmtUsd(minBalanceUsd)} minimum entity balance, SMW In >= ${minSmwIn}, verified liquidity >= ${fmtUsd(minLiquidityUsd)}, 24h volume >= ${fmtUsd(1000)}, and 24h txns >= 333 when available.`;
   renderTable();
 }
 

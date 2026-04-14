@@ -65,6 +65,9 @@ export type ZapperTokenBalance = {
   price: number | null;
   marketCap: number | null;
   liquidityUsd: number | null;
+  volume24h: number | null;
+  txns24h: number | null;
+  tokenAgeHours: number | null;
 };
 
 export type RawHoldingRecord = {
@@ -82,6 +85,9 @@ export type RawHoldingRecord = {
   price: number | null;
   marketCap: number | null;
   liquidityUsd: number | null;
+  volume24h: number | null;
+  txns24h: number | null;
+  tokenAgeHours: number | null;
   fetchedAt: string;
 };
 
@@ -110,6 +116,8 @@ export type TokenOverviewRow = {
   smwIn: number;
   marketCap: number | null;
   tokenAgeHours: number | null;
+  volume24h: number | null;
+  txns24h: number | null;
 };
 
 export type TokenEnrichmentRecord = {
