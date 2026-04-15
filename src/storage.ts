@@ -394,7 +394,7 @@ export function createStorage(cwd: string) {
       );
     },
 
-    getSnapshotTokensForEnrichment(snapshotId: number, minBalanceUsd = 100, minSmwIn = 3): SnapshotTokenForEnrichment[] {
+    getSnapshotTokensForEnrichment(snapshotId: number, minBalanceUsd = 111, minSmwIn = 1): SnapshotTokenForEnrichment[] {
       return db
         .prepare(
           `SELECT
@@ -416,7 +416,7 @@ export function createStorage(cwd: string) {
         .all(snapshotId, minBalanceUsd, minSmwIn) as SnapshotTokenForEnrichment[];
     },
 
-    getOverview(snapshotId: number, minBalanceUsd = 100, minSmwIn = 3, minLiquidityUsd = 11111): TokenOverviewRow[] {
+    getOverview(snapshotId: number, minBalanceUsd = 111, minSmwIn = 1, minLiquidityUsd = 11111): TokenOverviewRow[] {
       return db
         .prepare(
           `SELECT
@@ -450,14 +450,14 @@ export function createStorage(cwd: string) {
              )
              AND (
                MAX(CASE WHEN rh.token_address IS NOT NULL THEN rh.txns_24h END) IS NULL
-               OR MAX(CASE WHEN rh.token_address IS NOT NULL THEN rh.txns_24h END) >= 333
+               OR MAX(CASE WHEN rh.token_address IS NOT NULL THEN rh.txns_24h END) >= 11
              )
            ORDER BY smwIn DESC, holdingsUsd DESC, tokenSymbol COLLATE NOCASE ASC`,
         )
         .all(snapshotId, minBalanceUsd, minSmwIn, minLiquidityUsd) as TokenOverviewRow[];
     },
 
-    getTokenHolders(snapshotId: number, tokenKey: string, minBalanceUsd = 100): TokenHolderRow[] {
+    getTokenHolders(snapshotId: number, tokenKey: string, minBalanceUsd = 111): TokenHolderRow[] {
       return db
         .prepare(
           `SELECT

@@ -443,8 +443,8 @@ async function loadOverview() {
     return;
   }
 
-  const minBalanceUsd = Number(els.minBalanceInput.value || 100);
-  const minSmwIn = Number(els.minSmwInput.value || 3);
+  const minBalanceUsd = Number(els.minBalanceInput.value || 111);
+  const minSmwIn = Number(els.minSmwInput.value || 1);
   const minLiquidityUsd = 11111;
   const params = new URLSearchParams({
     snapshotId: String(state.selectedSnapshotId),
@@ -454,13 +454,13 @@ async function loadOverview() {
   });
   const payload = await fetchJson(`/api/overview?${params.toString()}`);
   state.rows = Array.isArray(payload.rows) ? payload.rows : [];
-  els.tableSubtitle.textContent = `Snapshot #${state.selectedSnapshotId} filtered at ${fmtUsd(minBalanceUsd)} minimum entity balance, SMW In >= ${minSmwIn}, verified liquidity >= ${fmtUsd(minLiquidityUsd)}, 24h volume >= ${fmtUsd(1000)}, and 24h txns >= 333 when available.`;
+  els.tableSubtitle.textContent = `Snapshot #${state.selectedSnapshotId} filtered at ${fmtUsd(minBalanceUsd)} minimum entity balance, SMW In >= ${minSmwIn}, verified liquidity >= ${fmtUsd(minLiquidityUsd)}, 24h volume >= ${fmtUsd(1000)}, and 24h txns >= 11 when available.`;
   renderTable();
 }
 
 async function loadHolders(tokenKey) {
   if (state.holders.has(tokenKey)) return;
-  const minBalanceUsd = Number(els.minBalanceInput.value || 100);
+  const minBalanceUsd = Number(els.minBalanceInput.value || 111);
   const params = new URLSearchParams({
     snapshotId: String(state.selectedSnapshotId),
     tokenKey,

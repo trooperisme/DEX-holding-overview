@@ -62,7 +62,7 @@ async function enrichSnapshotMarketData(options: {
   callbacks: RefreshCallbacks;
 }): Promise<{ attempted: number; enriched: number; failed: number }> {
   const snapshotTokens = options.storage
-    .getSnapshotTokensForEnrichment(options.snapshotId, 100, 1)
+    .getSnapshotTokensForEnrichment(options.snapshotId, 111, 1)
     .filter(
       (token) =>
         token.tokenAddress &&

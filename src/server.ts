@@ -44,8 +44,8 @@ app.get("/api/snapshots", (_req, res) => {
 
 app.get("/api/overview", (req, res) => {
   const snapshotId = Number(req.query.snapshotId || 0);
-  const minBalanceUsd = Number(req.query.minBalanceUsd || 100);
-  const minSmwIn = Number(req.query.minSmwIn || 3);
+  const minBalanceUsd = Number(req.query.minBalanceUsd || 111);
+  const minSmwIn = Number(req.query.minSmwIn || 1);
   const minLiquidityUsd = Number(req.query.minLiquidityUsd || 11111);
   if (!Number.isFinite(snapshotId) || snapshotId <= 0) {
     res.status(400).json({ error: "snapshotId is required" });
@@ -65,7 +65,7 @@ app.get("/api/overview", (req, res) => {
 app.get("/api/token-holders", (req, res) => {
   const snapshotId = Number(req.query.snapshotId || 0);
   const tokenKey = String(req.query.tokenKey || "");
-  const minBalanceUsd = Number(req.query.minBalanceUsd || 100);
+  const minBalanceUsd = Number(req.query.minBalanceUsd || 111);
   if (!Number.isFinite(snapshotId) || snapshotId <= 0 || !tokenKey) {
     res.status(400).json({ error: "snapshotId and tokenKey are required" });
     return;
