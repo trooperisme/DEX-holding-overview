@@ -61,9 +61,8 @@ async function enrichSnapshotMarketData(options: {
   signal?: AbortSignal;
   callbacks: RefreshCallbacks;
 }): Promise<{ attempted: number; enriched: number; failed: number }> {
-  const minSmwInForEnrichment = options.totalEntities <= 1 ? 1 : 3;
   const snapshotTokens = options.storage
-    .getSnapshotTokensForEnrichment(options.snapshotId, 100, minSmwInForEnrichment)
+    .getSnapshotTokensForEnrichment(options.snapshotId, 100, 1)
     .filter(
       (token) =>
         token.tokenAddress &&
