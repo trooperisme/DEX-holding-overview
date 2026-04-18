@@ -81,7 +81,7 @@ function fmtTokenAge(value) {
 function fmtMoniScoreValue(value) {
   const numeric = Number(value);
   if (!Number.isFinite(numeric)) return null;
-  if (numeric < 8000) return Math.round(numeric).toLocaleString("en-US");
+  if (numeric < 1000) return Math.round(numeric).toLocaleString("en-US");
   return `${Math.round(numeric / 1000).toLocaleString("en-US")}k`;
 }
 
