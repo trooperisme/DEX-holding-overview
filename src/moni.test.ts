@@ -1,9 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildMoniUrl, parseMoniMarkdown } from "./moni";
+import { buildMoniHandleCandidates, buildMoniUrl, parseMoniMarkdown } from "./moni";
 
 test("buildMoniUrl builds the discover URL from a Twitter handle", () => {
   assert.equal(buildMoniUrl("GeniusTerminal"), "https://discover.getmoni.io/GeniusTerminal");
+});
+
+test("buildMoniHandleCandidates adds case-sensitive Moni fallback slugs", () => {
+  assert.deepEqual(buildMoniHandleCandidates("derivexyz", "Derive"), ["derivexyz", "DeriveXYZ"]);
+  assert.deepEqual(buildMoniHandleCandidates("rei_labs", "Unit 00 - Rei"), ["rei_labs"]);
 });
 
 test("parseMoniMarkdown extracts score, level, and momentum data", () => {

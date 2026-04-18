@@ -10,6 +10,28 @@ export function buildMoniUrl(twitterHandle: string): string {
   return `https://discover.getmoni.io/${encodeURIComponent(twitterHandle)}`;
 }
 
+function alphanumeric(value: string): string {
+  return value.replace(/[^a-z0-9]/gi, "");
+}
+
+export function buildMoniHandleCandidates(twitterHandle: string, tokenName: string): string[] {
+  const handle = twitterHandle.trim();
+  if (!handle) return [];
+
+  const candidates = [handle];
+  const compactName = alphanumeric(tokenName);
+  const compactHandle = alphanumeric(handle);
+  const lowerName = compactName.toLowerCase();
+  const lowerHandle = compactHandle.toLowerCase();
+
+  if (compactName && lowerHandle.startsWith(lowerName) && handle === handle.toLowerCase()) {
+    const suffix = compactHandle.slice(compactName.length);
+    if (suffix) candidates.push(`${compactName}${suffix.toUpperCase()}`);
+  }
+
+  return Array.from(new Set(candidates));
+}
+
 export function parseMoniMarkdown(markdown: string): MoniScoreData | null {
   const lines = markdown
     .split(/\r?\n/)
@@ -91,4 +113,20 @@ export async function fetchMoniScoreData(
   }
 
   return parseMoniMarkdown(String(payload.data?.markdown || ""));
+}
+
+export async function fetchMoniScoreDataForToken(
+  firecrawlApiKey: string,
+  twitterHandle: string,
+  tokenName: string,
+  signal?: AbortSignal,
+): Promise<MoniScoreData | null> {
+  for (const handle of buildMoniHandleCandidates(twitterHandle, tokenName)) {
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const score = await fetchMoniScoreData(firecrawlApiKey, handle, signal);
+      if (score) return score;
+    }
+  }
+
+  return null;
 }

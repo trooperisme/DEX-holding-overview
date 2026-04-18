@@ -351,32 +351,39 @@ function renderSnapshots() {
     .join("");
 }
 
-function buildDrilldown(tokenKey) {
+function buildDrilldownRows(tokenKey) {
   const rows = state.holders.get(tokenKey);
   if (!rows) {
     return `
-      <div class="drilldown-panel">
-        <div class="empty-note">Loading entity breakdown...</div>
-      </div>
+      <tr class="drilldown-row">
+        <td colspan="9">
+          <div class="drilldown-panel">
+            <div class="empty-note">Loading entity breakdown...</div>
+          </div>
+        </td>
+      </tr>
     `;
   }
 
-  return `
-    <div class="drilldown-panel">
-      <div class="drilldown-grid">
-        ${rows
-          .map(
-            (row) => `
-              <div class="drilldown-item">
-                <span>${escapeHtml(row.entityName)}</span>
-                <span>${escapeHtml(fmtUsd(row.balanceUsd))}</span>
-              </div>
-            `,
-          )
-          .join("")}
-      </div>
-    </div>
-  `;
+  return rows
+    .map(
+      (row) => `
+        <tr class="drilldown-row drilldown-holder-row">
+          <td></td>
+          <td>
+            <span class="drilldown-entity">${escapeHtml(row.entityName)}</span>
+          </td>
+          <td></td>
+          <td></td>
+          <td></td>
+          <td></td>
+          <td class="drilldown-balance">${escapeHtml(fmtUsd(row.balanceUsd))}</td>
+          <td></td>
+          <td></td>
+        </tr>
+      `,
+    )
+    .join("");
 }
 
 function renderTable() {
@@ -445,11 +452,7 @@ function renderTable() {
         </tr>
         ${
           isOpen
-            ? `
-              <tr class="drilldown-row">
-                <td colspan="9">${buildDrilldown(row.tokenKey)}</td>
-              </tr>
-            `
+            ? buildDrilldownRows(row.tokenKey)
             : ""
         }
       `;

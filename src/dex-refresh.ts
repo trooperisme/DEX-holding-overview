@@ -4,7 +4,7 @@ import {
   toDexScreenerChainId,
 } from "./dexscreener";
 import { loadImportedEntities, maskApiKey, toTokenKey } from "./entities";
-import { fetchMoniScoreData } from "./moni";
+import { fetchMoniScoreDataForToken } from "./moni";
 import { resolveWorkspacePaths } from "./runtime-paths";
 import { createStorage } from "./storage";
 import { fetchZapperTokenBalances } from "./zapper";
@@ -102,6 +102,7 @@ async function enrichSnapshotMarketData(options: {
   const moniCandidates: Array<{
     tokenKey: string;
     tokenSymbol: string;
+    tokenName: string;
     twitterHandle: string;
   }> = [];
 
@@ -127,6 +128,7 @@ async function enrichSnapshotMarketData(options: {
       moniCandidates.push({
         tokenKey: token.tokenKey,
         tokenSymbol: token.tokenSymbol,
+        tokenName: token.tokenName,
         twitterHandle: marketData.twitterHandle,
       });
     }
@@ -162,6 +164,7 @@ async function enrichSnapshotMoniScores(options: {
   candidates: Array<{
     tokenKey: string;
     tokenSymbol: string;
+    tokenName: string;
     twitterHandle: string;
   }>;
   signal?: AbortSignal;
@@ -195,8 +198,9 @@ async function enrichSnapshotMoniScores(options: {
     }
 
     const handle = candidates[0].twitterHandle;
+    const tokenName = candidates[0].tokenName;
     try {
-      const score = await fetchMoniScoreData(firecrawlApiKey, handle, options.signal);
+      const score = await fetchMoniScoreDataForToken(firecrawlApiKey, handle, tokenName, options.signal);
       if (!score) {
         failed += candidates.length;
         continue;

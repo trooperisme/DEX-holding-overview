@@ -558,12 +558,37 @@ th {
 }
 
 .drilldown-row td {
-  padding-top: 0;
   background: rgba(255, 255, 255, 0.01);
+}
+
+.drilldown-holder-row td {
+  padding-top: 12px;
+  padding-bottom: 12px;
+  border-top-color: rgba(255, 255, 255, 0.05);
+}
+
+.drilldown-holder-row:hover td {
+  background: rgba(255, 255, 255, 0.018);
 }
 
 .drilldown-panel {
   padding: 0 0 18px;
+}
+
+.drilldown-entity {
+  display: inline-flex;
+  width: min(100%, 340px);
+  min-height: 42px;
+  align-items: center;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.drilldown-balance {
+  color: var(--text);
+  font-weight: 800;
 }
 
 .drilldown-grid {
