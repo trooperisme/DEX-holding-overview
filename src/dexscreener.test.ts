@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { pickBestPair, toDexScreenerChainId } from "./dexscreener";
+import { extractDirectTwitterHandle, pickBestPair, toDexScreenerChainId } from "./dexscreener";
 
 test("toDexScreenerChainId maps common Zapper chains", () => {
   assert.equal(toDexScreenerChainId(1, "Ethereum"), "ethereum");
@@ -26,4 +26,15 @@ test("pickBestPair prefers higher liquidity, then volume, then txns", () => {
   ]);
 
   assert.equal(best?.liquidity?.usd, 5000);
+});
+
+test("extractDirectTwitterHandle accepts only direct X/Twitter profile URLs", () => {
+  assert.equal(extractDirectTwitterHandle("https://x.com/GeniusTerminal"), "GeniusTerminal");
+  assert.equal(extractDirectTwitterHandle("https://twitter.com/solana"), "solana");
+  assert.equal(
+    extractDirectTwitterHandle("https://x.com/heyibinance/status/1974489756164575458"),
+    null,
+  );
+  assert.equal(extractDirectTwitterHandle("https://x.com/search?q=unc&src=typed_query&f=top"), null);
+  assert.equal(extractDirectTwitterHandle("https://example.com/solana"), null);
 });

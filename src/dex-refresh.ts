@@ -4,6 +4,7 @@ import {
   toDexScreenerChainId,
 } from "./dexscreener";
 import { loadImportedEntities, maskApiKey, toTokenKey } from "./entities";
+import { fetchMoniScoreData } from "./moni";
 import { resolveWorkspacePaths } from "./runtime-paths";
 import { createStorage } from "./storage";
 import { fetchZapperTokenBalances } from "./zapper";
@@ -98,6 +99,11 @@ async function enrichSnapshotMarketData(options: {
 
   let enriched = 0;
   let failed = 0;
+  const moniCandidates: Array<{
+    tokenKey: string;
+    tokenSymbol: string;
+    twitterHandle: string;
+  }> = [];
 
   for (const token of snapshotTokens) {
     if (options.signal?.aborted) {
@@ -117,8 +123,23 @@ async function enrichSnapshotMarketData(options: {
     }
 
     options.storage.updateSnapshotTokenMarketData(options.snapshotId, token.tokenKey, marketData);
+    if (marketData.twitterHandle) {
+      moniCandidates.push({
+        tokenKey: token.tokenKey,
+        tokenSymbol: token.tokenSymbol,
+        twitterHandle: marketData.twitterHandle,
+      });
+    }
     enriched += 1;
   }
+
+  await enrichSnapshotMoniScores({
+    storage: options.storage,
+    snapshotId: options.snapshotId,
+    candidates: moniCandidates,
+    signal: options.signal,
+    callbacks: options.callbacks,
+  });
 
   emitLog(
     options.callbacks,
@@ -133,6 +154,72 @@ async function enrichSnapshotMarketData(options: {
     enriched,
     failed,
   };
+}
+
+async function enrichSnapshotMoniScores(options: {
+  storage: ReturnType<typeof createStorage>;
+  snapshotId: number;
+  candidates: Array<{
+    tokenKey: string;
+    tokenSymbol: string;
+    twitterHandle: string;
+  }>;
+  signal?: AbortSignal;
+  callbacks: RefreshCallbacks;
+}): Promise<void> {
+  const firecrawlApiKey = process.env.FIRECRAWL_API_KEY?.trim();
+  if (!options.candidates.length) {
+    emitLog(options.callbacks, "info", "No direct Twitter/X profile handles found for Moni Score lookup.");
+    return;
+  }
+  if (!firecrawlApiKey) {
+    emitLog(options.callbacks, "warning", "Moni Score lookup skipped: FIRECRAWL_API_KEY is not configured.");
+    return;
+  }
+
+  const byHandle = new Map<string, typeof options.candidates>();
+  for (const candidate of options.candidates) {
+    const key = candidate.twitterHandle.toLowerCase();
+    if (!byHandle.has(key)) byHandle.set(key, []);
+    byHandle.get(key)!.push(candidate);
+  }
+
+  emitLog(options.callbacks, "info", `Enriching ${byHandle.size} Twitter/X handles with Moni Score data.`);
+
+  let enriched = 0;
+  let failed = 0;
+
+  for (const candidates of byHandle.values()) {
+    if (options.signal?.aborted) {
+      throw new DOMException("Refresh canceled", "AbortError");
+    }
+
+    const handle = candidates[0].twitterHandle;
+    try {
+      const score = await fetchMoniScoreData(firecrawlApiKey, handle, options.signal);
+      if (!score) {
+        failed += candidates.length;
+        continue;
+      }
+
+      for (const candidate of candidates) {
+        options.storage.updateSnapshotTokenMoniData(options.snapshotId, candidate.tokenKey, score);
+        enriched += 1;
+      }
+    } catch (error) {
+      failed += candidates.length;
+      const message = error instanceof Error ? error.message : String(error);
+      emitLog(options.callbacks, "warning", `Moni Score lookup skipped for @${handle}: ${message}`);
+    }
+  }
+
+  emitLog(
+    options.callbacks,
+    failed > 0 ? "warning" : "success",
+    failed > 0
+      ? `Moni Score enrichment finished: ${enriched}/${options.candidates.length} enriched, ${failed} pending.`
+      : `Moni Score enrichment finished: ${enriched}/${options.candidates.length} enriched.`,
+  );
 }
 
 export async function runDexRefresh(options: {
@@ -235,6 +322,11 @@ export async function runDexRefresh(options: {
           volume24h: holding.volume24h,
           txns24h: holding.txns24h,
           tokenAgeHours: holding.tokenAgeHours,
+          moniScore: holding.moniScore,
+          moniLevel: holding.moniLevel,
+          moniLevelName: holding.moniLevelName,
+          moniMomentumScorePct: holding.moniMomentumScorePct,
+          moniMomentumRank: holding.moniMomentumRank,
           fetchedAt,
         }));
 

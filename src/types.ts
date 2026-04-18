@@ -68,6 +68,11 @@ export type ZapperTokenBalance = {
   volume24h: number | null;
   txns24h: number | null;
   tokenAgeHours: number | null;
+  moniScore: number | null;
+  moniLevel: number | null;
+  moniLevelName: string | null;
+  moniMomentumScorePct: number | null;
+  moniMomentumRank: number | null;
 };
 
 export type RawHoldingRecord = {
@@ -88,6 +93,11 @@ export type RawHoldingRecord = {
   volume24h: number | null;
   txns24h: number | null;
   tokenAgeHours: number | null;
+  moniScore: number | null;
+  moniLevel: number | null;
+  moniLevelName: string | null;
+  moniMomentumScorePct: number | null;
+  moniMomentumRank: number | null;
   fetchedAt: string;
 };
 
@@ -116,6 +126,11 @@ export type TokenOverviewRow = {
   smwIn: number;
   marketCap: number | null;
   tokenAgeHours: number | null;
+  moniScore: number | null;
+  moniLevel: number | null;
+  moniLevelName: string | null;
+  moniMomentumScorePct: number | null;
+  moniMomentumRank: number | null;
   volume24h: number | null;
   txns24h: number | null;
 };

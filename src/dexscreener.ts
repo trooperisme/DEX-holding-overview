@@ -20,6 +20,12 @@ type DexScreenerPair = {
   marketCap?: number | null;
   fdv?: number | null;
   pairCreatedAt?: number | null;
+  info?: {
+    socials?: Array<{
+      url?: string | null;
+      type?: string | null;
+    }> | null;
+  } | null;
 };
 
 export type DexScreenerMarketData = {
@@ -28,9 +34,21 @@ export type DexScreenerMarketData = {
   volume24h: number | null;
   txns24h: number | null;
   tokenAgeHours: number | null;
+  twitterHandle: string | null;
 };
 
 const DEXSCREENER_BATCH_LIMIT = 30;
+const X_RESERVED_PATHS = new Set([
+  "explore",
+  "home",
+  "i",
+  "intent",
+  "messages",
+  "notifications",
+  "search",
+  "settings",
+  "share",
+]);
 
 function chunk<T>(items: T[], size: number): T[][]
 {
@@ -83,6 +101,38 @@ export function pickBestPair(pairs: DexScreenerPair[]): DexScreenerPair | null {
   })[0];
 }
 
+export function extractDirectTwitterHandle(url: string | null | undefined): string | null {
+  if (!url) return null;
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch (_error) {
+    return null;
+  }
+
+  const hostname = parsed.hostname.toLowerCase().replace(/^www\./, "");
+  if (hostname !== "x.com" && hostname !== "twitter.com") return null;
+
+  const segments = parsed.pathname.split("/").filter(Boolean);
+  if (segments.length !== 1) return null;
+
+  const handle = segments[0].replace(/^@/, "");
+  if (X_RESERVED_PATHS.has(handle.toLowerCase())) return null;
+  if (!/^[A-Za-z0-9_]{1,15}$/.test(handle)) return null;
+
+  return handle;
+}
+
+function getPairTwitterHandle(pair: DexScreenerPair): string | null {
+  const socials = pair.info?.socials || [];
+  for (const social of socials) {
+    if (String(social.type || "").toLowerCase() !== "twitter") continue;
+    const handle = extractDirectTwitterHandle(social.url);
+    if (handle) return handle;
+  }
+  return null;
+}
+
 function toMarketData(pair: DexScreenerPair | null): DexScreenerMarketData {
   if (!pair) {
     return {
@@ -91,6 +141,7 @@ function toMarketData(pair: DexScreenerPair | null): DexScreenerMarketData {
       volume24h: null,
       txns24h: null,
       tokenAgeHours: null,
+      twitterHandle: null,
     };
   }
 
@@ -104,6 +155,7 @@ function toMarketData(pair: DexScreenerPair | null): DexScreenerMarketData {
     volume24h: pair.volume?.h24 ?? null,
     txns24h: getPairTxns24h(pair),
     tokenAgeHours,
+    twitterHandle: getPairTwitterHandle(pair),
   };
 }
 

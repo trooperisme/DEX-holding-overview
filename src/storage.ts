@@ -143,6 +143,11 @@ export function createStorage(cwd: string) {
   ensureColumn("raw_holdings", "volume_24h", "REAL");
   ensureColumn("raw_holdings", "txns_24h", "REAL");
   ensureColumn("raw_holdings", "token_age_hours", "REAL");
+  ensureColumn("raw_holdings", "moni_score", "REAL");
+  ensureColumn("raw_holdings", "moni_level", "INTEGER");
+  ensureColumn("raw_holdings", "moni_level_name", "TEXT");
+  ensureColumn("raw_holdings", "moni_momentum_score_pct", "REAL");
+  ensureColumn("raw_holdings", "moni_momentum_rank", "INTEGER");
 
   const upsertEntity = db.prepare(`
     INSERT INTO entities (entity_name, full_zapper_link, resolved_label, link_type, created_at, updated_at)
@@ -203,11 +208,11 @@ export function createStorage(cwd: string) {
     INSERT INTO raw_holdings (
       snapshot_id, entity_id, token_key, token_symbol, token_name, token_address, network_name,
       chain_id, balance, balance_raw, balance_usd, price, market_cap, liquidity_usd, volume_24h, txns_24h,
-      token_age_hours, fetched_at
+      token_age_hours, moni_score, moni_level, moni_level_name, moni_momentum_score_pct, moni_momentum_rank, fetched_at
     ) VALUES (
       @snapshotId, @entityId, @tokenKey, @tokenSymbol, @tokenName, @tokenAddress, @networkName,
       @chainId, @balance, @balanceRaw, @balanceUsd, @price, @marketCap, @liquidityUsd, @volume24h, @txns24h,
-      @tokenAgeHours, @fetchedAt
+      @tokenAgeHours, @moniScore, @moniLevel, @moniLevelName, @moniMomentumScorePct, @moniMomentumRank, @fetchedAt
     )
   `);
 
@@ -218,6 +223,17 @@ export function createStorage(cwd: string) {
         volume_24h = @volume24h,
         txns_24h = @txns24h,
         token_age_hours = @tokenAgeHours
+    WHERE snapshot_id = @snapshotId
+      AND token_key = @tokenKey
+  `);
+
+  const updateMoniDataForTokenStmt = db.prepare(`
+    UPDATE raw_holdings
+    SET moni_score = @moniScore,
+        moni_level = @moniLevel,
+        moni_level_name = @moniLevelName,
+        moni_momentum_score_pct = @moniMomentumScorePct,
+        moni_momentum_rank = @moniMomentumRank
     WHERE snapshot_id = @snapshotId
       AND token_key = @tokenKey
   `);
@@ -365,6 +381,24 @@ export function createStorage(cwd: string) {
       });
     },
 
+    updateSnapshotTokenMoniData(snapshotId: number, tokenKey: string, moniData: {
+      moniScore: number | null;
+      moniLevel: number | null;
+      moniLevelName: string | null;
+      moniMomentumScorePct: number | null;
+      moniMomentumRank: number | null;
+    }): void {
+      updateMoniDataForTokenStmt.run({
+        snapshotId,
+        tokenKey,
+        moniScore: moniData.moniScore,
+        moniLevel: moniData.moniLevel,
+        moniLevelName: moniData.moniLevelName,
+        moniMomentumScorePct: moniData.moniMomentumScorePct,
+        moniMomentumRank: moniData.moniMomentumRank,
+      });
+    },
+
     getSnapshotSummaries(): SnapshotRecord[] {
       return db
         .prepare(
@@ -430,6 +464,11 @@ export function createStorage(cwd: string) {
               COUNT(DISTINCT rh.entity_id) as smwIn,
               MAX(rh.market_cap) as marketCap,
               MAX(rh.token_age_hours) as tokenAgeHours,
+              MAX(rh.moni_score) as moniScore,
+              MAX(rh.moni_level) as moniLevel,
+              MAX(rh.moni_level_name) as moniLevelName,
+              MAX(rh.moni_momentum_score_pct) as moniMomentumScorePct,
+              MAX(rh.moni_momentum_rank) as moniMomentumRank,
               MAX(rh.volume_24h) as volume24h,
               MAX(rh.txns_24h) as txns24h
            FROM raw_holdings rh

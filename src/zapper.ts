@@ -161,6 +161,11 @@ async function fetchZapperTokenBalancesSingle(
           volume24h: null,
           txns24h: null,
           tokenAgeHours: null,
+          moniScore: null,
+          moniLevel: null,
+          moniLevelName: null,
+          moniMomentumScorePct: null,
+          moniMomentumRank: null,
         };
       }) || [];
 

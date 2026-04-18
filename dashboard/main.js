@@ -78,6 +78,36 @@ function fmtTokenAge(value) {
   return `${(numeric / 24).toFixed(1)}d`;
 }
 
+function fmtMoniScoreValue(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return null;
+  if (numeric < 8000) return Math.round(numeric).toLocaleString("en-US");
+  return `${Math.round(numeric / 1000).toLocaleString("en-US")}k`;
+}
+
+function buildMoniScoreCell(row) {
+  const score = fmtMoniScoreValue(row.moniScore);
+  const level = Number(row.moniLevel);
+  const levelName = String(row.moniLevelName || "").trim();
+  if (!score || !Number.isFinite(level) || !levelName) {
+    return '<span class="moni-cell__pending">Pending</span>';
+  }
+
+  const momentumPct = Number(row.moniMomentumScorePct);
+  const momentumRank = Number(row.moniMomentumRank);
+  const momentumLine =
+    Number.isFinite(momentumPct) && Number.isFinite(momentumRank)
+      ? `🚀 ${momentumPct.toLocaleString("en-US", { maximumFractionDigits: 1 })}% · Top ${Math.round(momentumRank).toLocaleString("en-US")}`
+      : "No momentum";
+
+  return `
+    <div class="moni-cell">
+      <div>${escapeHtml(`${score} · ${levelName} ${Math.round(level)}/8`)}</div>
+      <span>${escapeHtml(momentumLine)}</span>
+    </div>
+  `;
+}
+
 function setBanner(message, tone = "warning") {
   if (!message) {
     els.statusBanner.hidden = true;
@@ -357,7 +387,7 @@ function renderTable() {
   if (!rows.length) {
     els.tableBody.innerHTML = `
         <tr>
-        <td colspan="8">
+        <td colspan="9">
           <div class="drilldown-panel">
             <div class="empty-note">No token rows match the current snapshot and filters.</div>
           </div>
@@ -404,6 +434,7 @@ function renderTable() {
           <td>${escapeHtml(fmtUsdOrDash(row.marketCap))}</td>
           <td>${networkBadge || '<span class="chain-text">Unknown</span>'}</td>
           <td>${escapeHtml(fmtTokenAge(row.tokenAgeHours))}</td>
+          <td>${buildMoniScoreCell(row)}</td>
           <td>${escapeHtml(fmtUsd(row.holdingsUsd))}</td>
           <td>${escapeHtml(String(row.smwIn))}</td>
           <td>
@@ -416,7 +447,7 @@ function renderTable() {
           isOpen
             ? `
               <tr class="drilldown-row">
-                <td colspan="8">${buildDrilldown(row.tokenKey)}</td>
+                <td colspan="9">${buildDrilldown(row.tokenKey)}</td>
               </tr>
             `
             : ""

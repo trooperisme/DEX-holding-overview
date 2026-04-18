@@ -531,6 +531,21 @@ th {
   color: var(--muted);
 }
 
+.moni-cell {
+  display: grid;
+  gap: 4px;
+  min-width: 150px;
+  font-weight: 800;
+  line-height: 1.25;
+}
+
+.moni-cell span,
+.moni-cell__pending {
+  color: var(--muted);
+  font-size: 0.84rem;
+  font-weight: 700;
+}
+
 .danger-button,
 .ghost-button {
   padding: 9px 12px;
