@@ -1,5 +1,7 @@
 import Database from "better-sqlite3";
 import { resolveWorkspacePaths } from "./runtime-paths";
+import { createPostgresStorage } from "./storage-postgres";
+import { SnapshotTokenForEnrichment, SnapshotUpdate, StorageAdapter } from "./storage-types";
 import {
   EntityFetchRunRecord,
   EntityRecord,
@@ -7,34 +9,20 @@ import {
   ImportedEntity,
   RawHoldingRecord,
   SnapshotRecord,
-  SnapshotStatus,
   TokenBlacklistRecord,
   TokenHolderRow,
   TokenOverviewRow,
 } from "./types";
 
-type SnapshotTokenForEnrichment = {
-  tokenKey: string;
-  tokenSymbol: string;
-  tokenName: string;
-  tokenAddress: string | null;
-  networkName: string;
-  chainId: number | null;
-  smwIn: number;
-  holdingsUsd: number;
-};
+export function createStorage(cwd: string): StorageAdapter {
+  if (process.env.DATABASE_URL?.trim()) {
+    return createPostgresStorage();
+  }
 
-type SnapshotUpdate = {
-  id: number;
-  status?: SnapshotStatus;
-  entitiesCompleted?: number;
-  entitiesFailed?: number;
-  totalRows?: number;
-  errorMessage?: string | null;
-  finishedAt?: string | null;
-};
+  return createSqliteStorage(cwd);
+}
 
-export function createStorage(cwd: string) {
+function createSqliteStorage(cwd: string): StorageAdapter {
   const paths = resolveWorkspacePaths(cwd);
   const db = new Database(paths.dbFile);
 

@@ -62,8 +62,7 @@ async function enrichSnapshotMarketData(options: {
   signal?: AbortSignal;
   callbacks: RefreshCallbacks;
 }): Promise<{ attempted: number; enriched: number; failed: number }> {
-  const snapshotTokens = options.storage
-    .getSnapshotTokensForEnrichment(options.snapshotId, 111, 1)
+  const snapshotTokens = (await options.storage.getSnapshotTokensForEnrichment(options.snapshotId, 111, 1))
     .filter(
       (token) =>
         token.tokenAddress &&
@@ -123,7 +122,7 @@ async function enrichSnapshotMarketData(options: {
       continue;
     }
 
-    options.storage.updateSnapshotTokenMarketData(options.snapshotId, token.tokenKey, marketData);
+    await options.storage.updateSnapshotTokenMarketData(options.snapshotId, token.tokenKey, marketData);
     if (marketData.twitterHandle) {
       moniCandidates.push({
         tokenKey: token.tokenKey,
@@ -207,7 +206,7 @@ async function enrichSnapshotMoniScores(options: {
       }
 
       for (const candidate of candidates) {
-        options.storage.updateSnapshotTokenMoniData(options.snapshotId, candidate.tokenKey, score);
+        await options.storage.updateSnapshotTokenMoniData(options.snapshotId, candidate.tokenKey, score);
         enriched += 1;
       }
     } catch (error) {
@@ -255,10 +254,10 @@ export async function runDexRefresh(options: {
     throwIfAborted();
     const imported = loadImportedEntities(paths.entitiesCsv);
     emitLog(callbacks, "info", `Imported ${imported.length} tracked entities from CSV.`);
-    storage.replaceEntities(imported);
+    await storage.replaceEntities(imported);
 
-    const entities = storage.getEntities();
-    snapshotId = storage.createSnapshot(entities.length, maskApiKey(options.apiKey));
+    const entities = await storage.getEntities();
+    snapshotId = await storage.createSnapshot(entities.length, maskApiKey(options.apiKey));
     totalEntities = entities.length;
     const progress = createProgressState({
       snapshotId,
@@ -274,7 +273,7 @@ export async function runDexRefresh(options: {
 
       const entityLabel = entity.resolvedLabel || entity.entityName;
       const startedAt = new Date().toISOString();
-      const runId = storage.insertEntityFetchRun({
+      const runId = await storage.insertEntityFetchRun({
         snapshotId,
         entityId: entity.id,
         status: "running",
@@ -334,17 +333,17 @@ export async function runDexRefresh(options: {
           fetchedAt,
         }));
 
-        storage.insertRawHoldingsForEntity(snapshotId, entity.id, rows);
+        await storage.insertRawHoldingsForEntity(snapshotId, entity.id, rows);
         entitiesCompleted += 1;
         totalRows += rows.length;
-        storage.updateEntityFetchRun(runId, {
+        await storage.updateEntityFetchRun(runId, {
           status: "success",
           rowsFound: rows.length,
           totalBalanceUsd: result.totalBalanceUsd,
           errorMessage: null,
           finishedAt: new Date().toISOString(),
         });
-        storage.updateSnapshot({
+        await storage.updateSnapshot({
           id: snapshotId,
           entitiesCompleted,
           entitiesFailed,
@@ -373,7 +372,7 @@ export async function runDexRefresh(options: {
       } catch (error) {
         if (isAbortError(error)) {
           aborted = true;
-          storage.updateEntityFetchRun(runId, {
+          await storage.updateEntityFetchRun(runId, {
             status: "canceled",
             rowsFound: 0,
             totalBalanceUsd: 0,
@@ -386,14 +385,14 @@ export async function runDexRefresh(options: {
 
         entitiesFailed += 1;
         const message = (error as Error).message;
-        storage.updateEntityFetchRun(runId, {
+        await storage.updateEntityFetchRun(runId, {
           status: "failed",
           rowsFound: 0,
           totalBalanceUsd: 0,
           errorMessage: message,
           finishedAt: new Date().toISOString(),
         });
-        storage.updateSnapshot({
+        await storage.updateSnapshot({
           id: snapshotId,
           entitiesCompleted,
           entitiesFailed,
@@ -441,7 +440,7 @@ export async function runDexRefresh(options: {
           ? "Refresh canceled by user"
           : null;
 
-    storage.updateSnapshot({
+    await storage.updateSnapshot({
       id: snapshotId,
       status,
       errorMessage,
@@ -496,7 +495,7 @@ export async function runDexRefresh(options: {
   } catch (error) {
     if (isAbortError(error)) {
       if (snapshotId > 0) {
-        storage.updateSnapshot({
+        await storage.updateSnapshot({
           id: snapshotId,
           status: "canceled",
           errorMessage: "Refresh canceled by user",
@@ -529,6 +528,6 @@ export async function runDexRefresh(options: {
     }
     throw error;
   } finally {
-    storage.close();
+    await storage.close();
   }
 }
