@@ -197,3 +197,5 @@ app.post("/api/refresh/cancel", (_req, res) => {
 export function createApp() {
   return app;
 }
+
+export default app;
