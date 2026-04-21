@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { waitUntil } from "@vercel/functions";
 import { runDexRefresh } from "./dex-refresh";
 import {
   RefreshJobState,
@@ -109,7 +110,7 @@ export function createRefreshJobManager(cwd: string) {
       };
       appendLog("info", "Starting DEX refresh.");
 
-      void runDexRefresh({
+      const refreshPromise = runDexRefresh({
         cwd,
         apiKey,
         signal: currentJob.controller.signal,
@@ -164,6 +165,12 @@ export function createRefreshJobManager(cwd: string) {
           }
           currentJob = null;
         });
+
+      if (process.env.VERCEL) {
+        waitUntil(refreshPromise);
+      } else {
+        void refreshPromise;
+      }
 
       return cloneJob(currentJob)!;
     },
