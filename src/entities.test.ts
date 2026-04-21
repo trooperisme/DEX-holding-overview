@@ -8,6 +8,7 @@ test("loadImportedEntities parses the seed csv", () => {
   assert.ok(rows.length > 30);
   assert.equal(rows[0].entityName, "Vương MC");
   assert.ok(rows[0].walletAddresses.length > 1);
+  assert.ok(rows.some((row) => row.entityName === "trollwhale"));
 });
 
 test("toTokenKey prefers chain and address", () => {
