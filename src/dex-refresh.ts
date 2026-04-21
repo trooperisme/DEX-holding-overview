@@ -54,6 +54,18 @@ function emitProgress(callbacks: RefreshCallbacks, partial: Partial<RefreshProgr
   callbacks.onProgress?.(createProgressState(partial));
 }
 
+function getEntityConcurrency(totalEntities: number): number {
+  const configured = Number(process.env.DEX_REFRESH_CONCURRENCY || (process.env.VERCEL ? 6 : 3));
+  const concurrency = Number.isFinite(configured) ? Math.trunc(configured) : 1;
+  return Math.max(1, Math.min(totalEntities, concurrency));
+}
+
+function getMoniConcurrency(totalHandles: number): number {
+  const configured = Number(process.env.MONI_REFRESH_CONCURRENCY || (process.env.VERCEL ? 4 : 2));
+  const concurrency = Number.isFinite(configured) ? Math.trunc(configured) : 1;
+  return Math.max(1, Math.min(totalHandles, concurrency));
+}
+
 async function enrichSnapshotMarketData(options: {
   storage: ReturnType<typeof createStorage>;
   snapshotId: number;
@@ -186,12 +198,20 @@ async function enrichSnapshotMoniScores(options: {
     byHandle.get(key)!.push(candidate);
   }
 
-  emitLog(options.callbacks, "info", `Enriching ${byHandle.size} Twitter/X handles with Moni Score data.`);
+  const handleGroups = Array.from(byHandle.values());
+  const moniConcurrency = getMoniConcurrency(handleGroups.length);
+
+  emitLog(
+    options.callbacks,
+    "info",
+    `Enriching ${byHandle.size} Twitter/X handles with Moni Score data at concurrency ${moniConcurrency}.`,
+  );
 
   let enriched = 0;
   let failed = 0;
+  let nextHandleIndex = 0;
 
-  for (const candidates of byHandle.values()) {
+  const processHandleGroup = async (candidates: typeof handleGroups[number]): Promise<void> => {
     if (options.signal?.aborted) {
       throw new DOMException("Refresh canceled", "AbortError");
     }
@@ -202,7 +222,7 @@ async function enrichSnapshotMoniScores(options: {
       const score = await fetchMoniScoreDataForToken(firecrawlApiKey, handle, tokenName, options.signal);
       if (!score) {
         failed += candidates.length;
-        continue;
+        return;
       }
 
       for (const candidate of candidates) {
@@ -210,11 +230,28 @@ async function enrichSnapshotMoniScores(options: {
         enriched += 1;
       }
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
       failed += candidates.length;
       const message = error instanceof Error ? error.message : String(error);
       emitLog(options.callbacks, "warning", `Moni Score lookup skipped for @${handle}: ${message}`);
     }
-  }
+  };
+
+  const workers = Array.from({ length: moniConcurrency }, async () => {
+    while (true) {
+      if (options.signal?.aborted) {
+        throw new DOMException("Refresh canceled", "AbortError");
+      }
+      const index = nextHandleIndex;
+      nextHandleIndex += 1;
+      if (index >= handleGroups.length) return;
+      await processHandleGroup(handleGroups[index]);
+    }
+  });
+
+  await Promise.all(workers);
 
   emitLog(
     options.callbacks,
@@ -268,22 +305,13 @@ export async function runDexRefresh(options: {
     emitProgress(callbacks, progress);
     emitLog(callbacks, "info", `Created snapshot #${snapshotId} for ${entities.length} entities.`);
 
-    for (const [index, entity] of entities.entries()) {
-      throwIfAborted();
+    const refreshConcurrency = getEntityConcurrency(entities.length);
+    emitLog(callbacks, "info", `Fetching entities with concurrency ${refreshConcurrency}.`);
 
+    let nextEntityIndex = 0;
+    const processEntity = async (index: number): Promise<void> => {
+      const entity = entities[index];
       const entityLabel = entity.resolvedLabel || entity.entityName;
-      const startedAt = new Date().toISOString();
-      const runId = await storage.insertEntityFetchRun({
-        snapshotId,
-        entityId: entity.id,
-        status: "running",
-        rowsFound: 0,
-        totalBalanceUsd: 0,
-        errorMessage: null,
-        startedAt,
-        finishedAt: null,
-      });
-
       emitProgress(callbacks, {
         snapshotId,
         totalEntities: entities.length,
@@ -296,6 +324,18 @@ export async function runDexRefresh(options: {
         errorMessage: null,
       });
       emitLog(callbacks, "info", `Fetching ${entityLabel} (${index + 1}/${entities.length})...`);
+
+      const startedAt = new Date().toISOString();
+      const runId = await storage.insertEntityFetchRun({
+        snapshotId,
+        entityId: entity.id,
+        status: "running",
+        rowsFound: 0,
+        totalBalanceUsd: 0,
+        errorMessage: null,
+        startedAt,
+        finishedAt: null,
+      });
 
       try {
         const result = await fetchZapperTokenBalances(
@@ -380,7 +420,7 @@ export async function runDexRefresh(options: {
             finishedAt: new Date().toISOString(),
           });
           emitLog(callbacks, "warning", `Canceled while processing ${entityLabel}.`);
-          break;
+          return;
         }
 
         entitiesFailed += 1;
@@ -411,7 +451,19 @@ export async function runDexRefresh(options: {
         });
         emitLog(callbacks, "error", `Failed ${entityLabel}: ${message}`);
       }
-    }
+    };
+
+    const workers = Array.from({ length: refreshConcurrency }, async () => {
+      while (!aborted) {
+        throwIfAborted();
+        const index = nextEntityIndex;
+        nextEntityIndex += 1;
+        if (index >= entities.length) return;
+        await processEntity(index);
+      }
+    });
+
+    await Promise.all(workers);
 
     if (!aborted && entitiesCompleted > 0) {
       const enrichment = await enrichSnapshotMarketData({
