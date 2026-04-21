@@ -28,7 +28,6 @@ export function resolveWorkspacePaths(cwd: string) {
 
   ensureDirExists(rawDir);
   ensureDirExists(dbDir);
-  ensureDirExists(dashboardDir);
 
   return {
     cwd,
