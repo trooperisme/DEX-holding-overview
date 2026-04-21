@@ -250,7 +250,9 @@ async function syncRefreshStatus(options = {}) {
   if (wasRunning && !nextJob?.running) {
     state.openTokenKey = null;
     state.holders.clear();
-    if (nextJob?.progress?.snapshotId) {
+    const status = nextJob?.progress?.status;
+    const totalRows = Number(nextJob?.progress?.totalRows || 0);
+    if (nextJob?.progress?.snapshotId && (status === "success" || status === "partial" || totalRows > 0)) {
       state.selectedSnapshotId = Number(nextJob.progress.snapshotId) || state.selectedSnapshotId;
     }
     await loadSnapshots();
@@ -337,6 +339,26 @@ function updateSummary(snapshot) {
         : "Ready";
 
   els.heroMeta.textContent = `${fmtDate(snapshot.finishedAt || snapshot.createdAt)} · ${suffix}`;
+}
+
+function getSelectedSnapshot() {
+  return state.snapshots.find((item) => item.id === state.selectedSnapshotId) || null;
+}
+
+function isUsableSnapshot(snapshot) {
+  if (!snapshot) return false;
+  if (Number(snapshot.totalRows || 0) > 0) return true;
+  return snapshot.status === "success" || snapshot.status === "partial";
+}
+
+function chooseDefaultSnapshotId(preferredId = null) {
+  const preferred = state.snapshots.find((snapshot) => snapshot.id === preferredId);
+  if (isUsableSnapshot(preferred)) return preferred.id;
+
+  const usable = state.snapshots.find(isUsableSnapshot);
+  if (usable) return usable.id;
+
+  return state.snapshots[0]?.id || null;
 }
 
 function renderSnapshots() {
@@ -463,11 +485,12 @@ function renderTable() {
 async function loadSnapshots() {
   const payload = await fetchJson("/api/snapshots");
   state.snapshots = Array.isArray(payload.snapshots) ? payload.snapshots : [];
-  if (!state.selectedSnapshotId && payload.latest?.id) {
-    state.selectedSnapshotId = payload.latest.id;
+  const selected = getSelectedSnapshot();
+  if (!selected || !isUsableSnapshot(selected)) {
+    state.selectedSnapshotId = chooseDefaultSnapshotId(payload.latest?.id || null);
   }
   renderSnapshots();
-  updateSummary(state.snapshots.find((item) => item.id === state.selectedSnapshotId) || payload.latest || null);
+  updateSummary(getSelectedSnapshot() || payload.latest || null);
 }
 
 async function loadOverview() {
@@ -488,7 +511,17 @@ async function loadOverview() {
   });
   const payload = await fetchJson(`/api/overview?${params.toString()}`);
   state.rows = Array.isArray(payload.rows) ? payload.rows : [];
+  const snapshot = getSelectedSnapshot();
   els.tableSubtitle.textContent = `Snapshot #${state.selectedSnapshotId} filtered at ${fmtUsd(minBalanceUsd)} minimum entity balance, SMW In >= ${minSmwIn}, verified liquidity >= ${fmtUsd(minLiquidityUsd)}, 24h volume >= ${fmtUsd(1000)}, and 24h txns >= 11 when available.`;
+  if (!state.rows.length && snapshot?.status === "canceled") {
+    setBanner(`Snapshot #${snapshot.id} was canceled before matching holdings were saved. Select another snapshot or run analysis again.`, "warning");
+  } else if (!state.rows.length && snapshot?.status === "failed") {
+    setBanner(snapshot.errorMessage || `Snapshot #${snapshot.id} failed before matching holdings were saved.`, "danger");
+  } else if (snapshot?.status === "running" && Number(snapshot.totalRows || 0) > 0) {
+    setBanner(`Snapshot #${snapshot.id} is still running. Showing partial holdings saved so far.`, "warning");
+  } else if (state.rows.length) {
+    setBanner(null);
+  }
   renderTable();
 }
 
@@ -620,7 +653,7 @@ els.snapshotSelect.addEventListener("change", async () => {
   state.selectedSnapshotId = Number(els.snapshotSelect.value || 0) || null;
   state.openTokenKey = null;
   state.holders.clear();
-  updateSummary(state.snapshots.find((item) => item.id === state.selectedSnapshotId) || null);
+  updateSummary(getSelectedSnapshot());
   await loadOverview();
 });
 

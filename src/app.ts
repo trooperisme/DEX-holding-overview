@@ -4,6 +4,7 @@ import express from "express";
 import { createRefreshJobManager } from "./refresh-jobs";
 import { resolveWorkspacePaths } from "./runtime-paths";
 import { createStorage } from "./storage";
+import { SnapshotRecord, SnapshotStatus } from "./types";
 
 dotenv.config();
 
@@ -11,6 +12,7 @@ const app = express();
 const cwd = process.cwd();
 const paths = resolveWorkspacePaths(cwd);
 const refreshJobs = createRefreshJobManager(cwd);
+const STALE_REFRESH_AFTER_MS = Number(process.env.REFRESH_STALE_AFTER_MS || (process.env.VERCEL ? 330_000 : 1_800_000));
 
 app.use(express.json());
 app.use("/dashboard", express.static(paths.dashboardDir));
@@ -36,11 +38,100 @@ function sendServerError(res: express.Response, error: unknown): void {
   res.status(500).json({ error: error instanceof Error ? error.message : "Unexpected server error" });
 }
 
+function isStaleRunningSnapshot(snapshot: SnapshotRecord): boolean {
+  if (snapshot.status !== "running") return false;
+  const createdAtMs = new Date(snapshot.createdAt).getTime();
+  if (!Number.isFinite(createdAtMs)) return false;
+  return Date.now() - createdAtMs > STALE_REFRESH_AFTER_MS;
+}
+
+function incompleteSnapshotStatus(snapshot: SnapshotRecord): SnapshotStatus {
+  return snapshot.entitiesCompleted > 0 || snapshot.totalRows > 0 ? "partial" : "failed";
+}
+
+function snapshotToRefreshJob(snapshot: SnapshotRecord) {
+  const status = snapshot.status;
+  const running = status === "running";
+  const totalEntities = Number(snapshot.totalEntities || 0);
+  const entitiesCompleted = Number(snapshot.entitiesCompleted || 0);
+  const entitiesFailed = Number(snapshot.entitiesFailed || 0);
+  const totalRows = Number(snapshot.totalRows || 0);
+  return {
+    jobId: `snapshot-${snapshot.id}`,
+    running,
+    startedAt: snapshot.createdAt,
+    finishedAt: snapshot.finishedAt,
+    apiKeyLabel: snapshot.zapperKeyLabel,
+    progress: {
+      snapshotId: snapshot.id,
+      totalEntities,
+      entitiesCompleted,
+      entitiesFailed,
+      totalRows,
+      currentEntity: null,
+      currentEntityIndex: null,
+      status,
+      errorMessage: snapshot.errorMessage,
+    },
+    logs: [
+      {
+        at: snapshot.createdAt,
+        tone: "info" as const,
+        message: running
+          ? "Refresh progress recovered from the database."
+          : `Snapshot ${status}.`,
+      },
+    ],
+    result: running
+      ? null
+      : {
+          snapshotId: snapshot.id,
+          totalEntities,
+          entitiesCompleted,
+          entitiesFailed,
+          totalRows,
+          status,
+        },
+  };
+}
+
+async function reconcileSnapshots(storage: ReturnType<typeof createStorage>, hasInMemoryJob: boolean) {
+  let snapshots = await storage.getSnapshotSummaries();
+  if (!hasInMemoryJob) {
+    const staleRunningSnapshots = snapshots.filter(isStaleRunningSnapshot);
+    for (const snapshot of staleRunningSnapshots) {
+      const status = incompleteSnapshotStatus(snapshot);
+      await storage.updateSnapshot({
+        id: snapshot.id,
+        status,
+        errorMessage:
+          status === "partial"
+            ? "Refresh stopped before all entities completed. Showing partial results."
+            : "Refresh stopped before any entity completed.",
+        finishedAt: new Date().toISOString(),
+        entitiesCompleted: snapshot.entitiesCompleted,
+        entitiesFailed: Math.max(snapshot.entitiesFailed, snapshot.totalEntities - snapshot.entitiesCompleted),
+        totalRows: snapshot.totalRows,
+      });
+    }
+    if (staleRunningSnapshots.length) {
+      snapshots = await storage.getSnapshotSummaries();
+    }
+  }
+
+  return {
+    snapshots,
+    latest: snapshots[0] || null,
+    runningSnapshot: snapshots.find((snapshot) => snapshot.status === "running") || null,
+  };
+}
+
 app.get("/api/snapshots", async (_req, res) => {
   const storage = createStorage(cwd);
   try {
-    const snapshots = await storage.getSnapshotSummaries();
-    res.json({ snapshots, latest: await storage.getLatestSnapshot() });
+    const activeJob = refreshJobs.getCurrent();
+    const snapshotState = await reconcileSnapshots(storage, Boolean(activeJob?.running));
+    res.json({ snapshots: snapshotState.snapshots, latest: snapshotState.latest });
   } catch (error) {
     sendServerError(res, error);
   } finally {
@@ -155,14 +246,38 @@ app.post("/api/blacklist/restore", async (req, res) => {
 
 app.get("/api/refresh/status", (_req, res) => {
   const currentJob = refreshJobs.getCurrent();
-  const latestJob = refreshJobs.getLatest();
-  res.json({
-    ok: true,
-    refreshRunning: Boolean(currentJob?.running),
-    currentJob,
-    latestJob,
-    job: currentJob || latestJob,
-  });
+  if (currentJob) {
+    const latestJob = refreshJobs.getLatest();
+    res.json({
+      ok: true,
+      refreshRunning: Boolean(currentJob.running),
+      currentJob,
+      latestJob,
+      job: currentJob || latestJob,
+    });
+    return;
+  }
+
+  const storage = createStorage(cwd);
+  reconcileSnapshots(storage, false)
+    .then((snapshotState) => {
+      const persistedJob = snapshotState.runningSnapshot
+        ? snapshotToRefreshJob(snapshotState.runningSnapshot)
+        : snapshotState.latest
+          ? snapshotToRefreshJob(snapshotState.latest)
+          : null;
+      res.json({
+        ok: true,
+        refreshRunning: Boolean(snapshotState.runningSnapshot),
+        currentJob: snapshotState.runningSnapshot ? persistedJob : null,
+        latestJob: persistedJob,
+        job: persistedJob,
+      });
+    })
+    .catch((error) => sendServerError(res, error))
+    .finally(() => {
+      void storage.close();
+    });
 });
 
 app.post("/api/refresh", async (req, res) => {
@@ -176,12 +291,20 @@ app.post("/api/refresh", async (req, res) => {
     return;
   }
 
+  const storage = createStorage(cwd);
   try {
+    const snapshotState = await reconcileSnapshots(storage, false);
+    if (snapshotState.runningSnapshot) {
+      res.status(409).json({ error: "Refresh already running" });
+      return;
+    }
     const job = await refreshJobs.start(apiKey);
     res.status(202).json({ ok: true, job });
   } catch (error) {
     const message = (error as Error).message;
     res.status(message.includes("already running") ? 409 : 500).json({ error: message });
+  } finally {
+    await storage.close();
   }
 });
 
