@@ -1,4 +1,3 @@
-import Database from "better-sqlite3";
 import { resolveWorkspacePaths } from "./runtime-paths";
 import { createPostgresStorage } from "./storage-postgres";
 import { SnapshotTokenForEnrichment, SnapshotUpdate, StorageAdapter } from "./storage-types";
@@ -23,6 +22,7 @@ export function createStorage(cwd: string): StorageAdapter {
 }
 
 function createSqliteStorage(cwd: string): StorageAdapter {
+  const Database = require("better-sqlite3") as typeof import("better-sqlite3");
   const paths = resolveWorkspacePaths(cwd);
   const db = new Database(paths.dbFile);
 
