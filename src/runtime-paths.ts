@@ -8,7 +8,7 @@ function ensureDirExists(dirPath: string): void {
 }
 
 export function resolveWorkspacePaths(cwd: string) {
-  const dataRoot = process.env.DATA_DIR
+  const dataRoot = process.env.DATA_DIR && !process.env.VERCEL
     ? path.resolve(cwd, process.env.DATA_DIR)
     : process.env.VERCEL
       ? path.join("/tmp", "dex-holding-overview-data")
@@ -22,7 +22,7 @@ export function resolveWorkspacePaths(cwd: string) {
     : path.join(cwd, "dashboard");
   const dbFile = path.join(dbDir, "dex-holding-overview.db");
   const entitiesCsv =
-    process.env.TRADER_ENTITIES_CSV && process.env.TRADER_ENTITIES_CSV.trim()
+    process.env.TRADER_ENTITIES_CSV && process.env.TRADER_ENTITIES_CSV.trim() && !process.env.VERCEL
       ? path.resolve(cwd, process.env.TRADER_ENTITIES_CSV)
       : path.join(cwd, "data", "raw", "dex-entities-zapper.csv");
 

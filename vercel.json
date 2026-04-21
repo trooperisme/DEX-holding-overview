@@ -2,7 +2,8 @@
   "buildCommand": "npm run build",
   "functions": {
     "api/index.ts": {
-      "maxDuration": 300
+      "maxDuration": 300,
+      "includeFiles": "data/raw/*.csv"
     }
   },
   "redirects": [
