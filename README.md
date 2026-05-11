@@ -31,3 +31,40 @@ Local DEX holdings dashboard for Zapper bundle entities.
 
 - Seed CSV: `data/raw/dex-entities-zapper.csv`
 - SQLite DB: `data/db/dex-holding-overview.db`
+
+## Railway SQLite to Supabase migration
+
+Use this once if your old Railway project stored data in `/data/db/dex-holding-overview.db` and you want future Railway accounts to reuse Supabase instead of a Railway volume.
+
+1. Run `supabase/schema.sql` in Supabase
+2. Download the old SQLite file from Railway volume
+3. Run:
+
+```bash
+DATABASE_URL='postgresql://...'
+DATABASE_SCHEMA=dex
+SQLITE_PATH=/absolute/path/to/dex-holding-overview.db
+npm run migrate:sqlite-to-postgres
+```
+
+If the target schema already has data and you want to replace it:
+
+```bash
+DATABASE_URL='postgresql://...'
+DATABASE_SCHEMA=dex
+SQLITE_PATH=/absolute/path/to/dex-holding-overview.db
+PG_TRUNCATE_BEFORE_IMPORT=1
+npm run migrate:sqlite-to-postgres -- --truncate
+```
+
+After the import, point every new Railway project at Supabase with:
+
+```bash
+DATABASE_URL='postgresql://...'
+DATABASE_SCHEMA=dex
+FIRECRAWL_API_KEY=...
+TRADER_ENTITIES_CSV=data/raw/dex-entities-zapper.csv
+HOST=0.0.0.0
+```
+
+With that setup, Railway becomes disposable compute and Supabase keeps the durable history.
