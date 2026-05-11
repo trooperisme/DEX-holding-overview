@@ -9,6 +9,10 @@ test("loadImportedEntities parses the seed csv", () => {
   assert.equal(rows[0].entityName, "Vương MC");
   assert.ok(rows[0].walletAddresses.length > 1);
   assert.ok(rows.some((row) => row.entityName === "trollwhale"));
+  const swansonBenson = rows.find((row) => row.entityName === "SwansonBenson");
+  assert.ok(swansonBenson);
+  assert.equal(swansonBenson.resolvedLabel, "swansonbenson");
+  assert.equal(swansonBenson.walletAddresses.length, 16);
 });
 
 test("toTokenKey prefers chain and address", () => {
