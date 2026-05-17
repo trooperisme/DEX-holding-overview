@@ -13,6 +13,11 @@ test("loadImportedEntities parses the seed csv", () => {
   assert.ok(swansonBenson);
   assert.equal(swansonBenson.resolvedLabel, "swansonbenson");
   assert.equal(swansonBenson.walletAddresses.length, 16);
+  assert.deepEqual(
+    rows.find((row) => row.entityName === "Base Specialist | tommy 🌙")?.walletAddresses.slice(-1),
+    ["0xa63d8e8a4dd26544d56d4a015792c3df06e97f25"],
+  );
+  assert.equal(rows.find((row) => row.entityName === "Base Specialist | tommy 🌙")?.walletAddresses.length, 13);
 });
 
 test("toTokenKey prefers chain and address", () => {
