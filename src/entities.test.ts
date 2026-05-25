@@ -16,6 +16,12 @@ test("loadImportedEntities parses the seed csv", () => {
   assert.ok(
     rows.find((row) => row.entityName === "0xDQ")?.walletAddresses.includes("0xCd76E4e8D7F498A728cfAfe088fB3e6fCBbfaB21"),
   );
+  const jaiPrasad = rows.find((row) => row.entityName === "jai_prasad 17");
+  assert.ok(jaiPrasad);
+  assert.equal(jaiPrasad.resolvedLabel, "jai_prasad17");
+  assert.equal(jaiPrasad.walletAddresses.length, 15);
+  assert.ok(jaiPrasad.walletAddresses.includes("0xc04eb384bb9f0872a3cb41ba74867936d3fb5162"));
+  assert.ok(jaiPrasad.walletAddresses.includes("7dAVdLmmtLwo55hwqTVZkfo4MLgmMyvTCUCQCVRjihkS"));
   assert.deepEqual(
     rows.find((row) => row.entityName === "Base Specialist | tommy 🌙")?.walletAddresses.slice(-1),
     ["0xa63d8e8a4dd26544d56d4a015792c3df06e97f25"],
