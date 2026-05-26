@@ -438,7 +438,13 @@ function createSqliteStorage(cwd: string): StorageAdapter {
         .all(snapshotId, minBalanceUsd, minSmwIn) as SnapshotTokenForEnrichment[];
     },
 
-    getOverview(snapshotId: number, minBalanceUsd = 111, minSmwIn = 1, minLiquidityUsd = 11111): TokenOverviewRow[] {
+    getOverview(
+      snapshotId: number,
+      minBalanceUsd = 111,
+      minSmwIn = 1,
+      minLiquidityUsd = 11111,
+      maxMarketCapUsd: number | null = null,
+    ): TokenOverviewRow[] {
       return db
         .prepare(
           `SELECT
@@ -479,9 +485,14 @@ function createSqliteStorage(cwd: string): StorageAdapter {
                MAX(CASE WHEN rh.token_address IS NOT NULL THEN rh.txns_24h END) IS NULL
                OR MAX(CASE WHEN rh.token_address IS NOT NULL THEN rh.txns_24h END) >= 11
              )
+             AND (
+               ? IS NULL
+               OR MAX(rh.market_cap) IS NULL
+               OR MAX(rh.market_cap) < ?
+             )
            ORDER BY smwIn DESC, holdingsUsd DESC, tokenSymbol COLLATE NOCASE ASC`,
         )
-        .all(snapshotId, minBalanceUsd, minSmwIn, minLiquidityUsd) as TokenOverviewRow[];
+        .all(snapshotId, minBalanceUsd, minSmwIn, minLiquidityUsd, maxMarketCapUsd, maxMarketCapUsd) as TokenOverviewRow[];
     },
 
     getTokenHolders(snapshotId: number, tokenKey: string, minBalanceUsd = 111): TokenHolderRow[] {

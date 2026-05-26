@@ -5,6 +5,9 @@ const els = {
   snapshotSelect: document.getElementById("snapshot-select"),
   minBalanceInput: document.getElementById("min-balance-input"),
   minSmwInput: document.getElementById("min-smw-input"),
+  maxMarketCapInput: document.getElementById("max-market-cap-input"),
+  applyMarketCapButton: document.getElementById("apply-market-cap-button"),
+  resetMarketCapButton: document.getElementById("reset-market-cap-button"),
   apiKeyInput: document.getElementById("api-key-input"),
   summaryStatus: document.getElementById("summary-status"),
   summaryEntities: document.getElementById("summary-entities"),
@@ -30,6 +33,7 @@ const state = {
   holders: new Map(),
   sortKey: "smwIn",
   sortDir: "desc",
+  maxMarketCapUsd: null,
   refreshJob: null,
   refreshPollTimer: null,
 };
@@ -57,6 +61,16 @@ function fmtUsdOrDash(value) {
   const numeric = Number(value);
   if (!Number.isFinite(numeric) || numeric <= 0) return "—";
   return fmtUsd(numeric);
+}
+
+function parseMarketCapFilterInput() {
+  const numeric = Number(els.maxMarketCapInput.value || 0);
+  return Number.isFinite(numeric) && numeric > 0 ? numeric : null;
+}
+
+function clearOpenRows() {
+  state.openTokenKey = null;
+  state.holders.clear();
 }
 
 function fmtDate(value) {
@@ -509,10 +523,16 @@ async function loadOverview() {
     minSmwIn: String(minSmwIn),
     minLiquidityUsd: String(minLiquidityUsd),
   });
+  if (state.maxMarketCapUsd) {
+    params.set("maxMarketCapUsd", String(state.maxMarketCapUsd));
+  }
   const payload = await fetchJson(`/api/overview?${params.toString()}`);
   state.rows = Array.isArray(payload.rows) ? payload.rows : [];
   const snapshot = getSelectedSnapshot();
-  els.tableSubtitle.textContent = `Snapshot #${state.selectedSnapshotId} filtered at ${fmtUsd(minBalanceUsd)} minimum entity balance, SMW In >= ${minSmwIn}, verified liquidity >= ${fmtUsd(minLiquidityUsd)}, 24h volume >= ${fmtUsd(1000)}, and 24h txns >= 11 when available.`;
+  const marketCapConstraint = state.maxMarketCapUsd
+    ? `Market cap < ${fmtUsd(state.maxMarketCapUsd)}; unknown market cap included`
+    : "no market cap constraint";
+  els.tableSubtitle.textContent = `Snapshot #${state.selectedSnapshotId} filtered at ${fmtUsd(minBalanceUsd)} minimum entity balance, SMW In >= ${minSmwIn}, verified liquidity >= ${fmtUsd(minLiquidityUsd)}, 24h volume >= ${fmtUsd(1000)}, 24h txns >= 11 when available, and ${marketCapConstraint}.`;
   if (!state.rows.length && snapshot?.status === "canceled") {
     setBanner(`Snapshot #${snapshot.id} was canceled before matching holdings were saved. Select another snapshot or run analysis again.`, "warning");
   } else if (!state.rows.length && snapshot?.status === "failed") {
@@ -651,20 +671,38 @@ els.refreshButton.addEventListener("click", handleRefresh);
 els.cancelButton.addEventListener("click", handleCancel);
 els.snapshotSelect.addEventListener("change", async () => {
   state.selectedSnapshotId = Number(els.snapshotSelect.value || 0) || null;
-  state.openTokenKey = null;
-  state.holders.clear();
+  clearOpenRows();
   updateSummary(getSelectedSnapshot());
   await loadOverview();
 });
 
 els.minBalanceInput.addEventListener("change", async () => {
-  state.openTokenKey = null;
-  state.holders.clear();
+  clearOpenRows();
   await loadOverview();
 });
 
 els.minSmwInput.addEventListener("change", async () => {
-  state.openTokenKey = null;
+  clearOpenRows();
+  await loadOverview();
+});
+
+els.applyMarketCapButton.addEventListener("click", async () => {
+  state.maxMarketCapUsd = parseMarketCapFilterInput();
+  clearOpenRows();
+  await loadOverview();
+});
+
+els.resetMarketCapButton.addEventListener("click", async () => {
+  els.maxMarketCapInput.value = "";
+  state.maxMarketCapUsd = null;
+  clearOpenRows();
+  await loadOverview();
+});
+
+els.maxMarketCapInput.addEventListener("keydown", async (event) => {
+  if (event.key !== "Enter") return;
+  state.maxMarketCapUsd = parseMarketCapFilterInput();
+  clearOpenRows();
   await loadOverview();
 });
 

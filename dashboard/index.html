@@ -51,6 +51,14 @@
           <label class="field-label" for="min-smw-input">Min SMW In</label>
           <input id="min-smw-input" type="number" min="1" step="1" value="1" />
         </div>
+        <div class="control-block">
+          <label class="field-label" for="max-market-cap-input">Max Market Cap USD</label>
+          <input id="max-market-cap-input" type="number" min="0" step="1" placeholder="No limit" />
+        </div>
+        <div class="control-block market-cap-actions">
+          <button class="ghost-button" id="apply-market-cap-button" type="button">Filter Market Cap</button>
+          <button class="ghost-button" id="reset-market-cap-button" type="button">Reset Market Cap</button>
+        </div>
         <div class="summary-strip">
           <span class="pill" id="summary-status">Idle</span>
           <span class="pill" id="summary-entities">0 entities</span>

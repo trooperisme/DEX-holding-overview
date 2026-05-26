@@ -430,7 +430,13 @@ export function createPostgresStorage(): StorageAdapter {
       }));
     },
 
-    async getOverview(snapshotId: number, minBalanceUsd = 111, minSmwIn = 1, minLiquidityUsd = 11111): Promise<TokenOverviewRow[]> {
+    async getOverview(
+      snapshotId: number,
+      minBalanceUsd = 111,
+      minSmwIn = 1,
+      minLiquidityUsd = 11111,
+      maxMarketCapUsd: number | null = null,
+    ): Promise<TokenOverviewRow[]> {
       const result = await getPool().query(
         `SELECT
             rh.token_key,
@@ -470,8 +476,13 @@ export function createPostgresStorage(): StorageAdapter {
              MAX(CASE WHEN rh.token_address IS NOT NULL THEN rh.txns_24h END) IS NULL
              OR MAX(CASE WHEN rh.token_address IS NOT NULL THEN rh.txns_24h END) >= 11
            )
+           AND (
+             $5::numeric IS NULL
+             OR MAX(rh.market_cap) IS NULL
+             OR MAX(rh.market_cap) < $5
+           )
          ORDER BY smw_in DESC, holdings_usd DESC, token_symbol ASC`,
-        [snapshotId, minBalanceUsd, minSmwIn, minLiquidityUsd],
+        [snapshotId, minBalanceUsd, minSmwIn, minLiquidityUsd, maxMarketCapUsd],
       );
       return result.rows.map(mapOverview);
     },

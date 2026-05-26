@@ -144,6 +144,8 @@ app.get("/api/overview", async (req, res) => {
   const minBalanceUsd = Number(req.query.minBalanceUsd || 111);
   const minSmwIn = Number(req.query.minSmwIn || 1);
   const minLiquidityUsd = Number(req.query.minLiquidityUsd || 11111);
+  const maxMarketCapUsdRaw = Number(req.query.maxMarketCapUsd || 0);
+  const maxMarketCapUsd = Number.isFinite(maxMarketCapUsdRaw) && maxMarketCapUsdRaw > 0 ? maxMarketCapUsdRaw : null;
   if (!Number.isFinite(snapshotId) || snapshotId <= 0) {
     res.status(400).json({ error: "snapshotId is required" });
     return;
@@ -152,7 +154,7 @@ app.get("/api/overview", async (req, res) => {
   const storage = createStorage(cwd);
   try {
     res.json({
-      rows: await storage.getOverview(snapshotId, minBalanceUsd, minSmwIn, minLiquidityUsd),
+      rows: await storage.getOverview(snapshotId, minBalanceUsd, minSmwIn, minLiquidityUsd, maxMarketCapUsd),
     });
   } catch (error) {
     sendServerError(res, error);

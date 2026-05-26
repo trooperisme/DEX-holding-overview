@@ -60,7 +60,13 @@ export type StorageAdapter = {
   getSnapshotSummaries(): StorageResult<SnapshotRecord[]>;
   getLatestSnapshot(): StorageResult<SnapshotRecord | null>;
   getSnapshotTokensForEnrichment(snapshotId: number, minBalanceUsd?: number, minSmwIn?: number): StorageResult<SnapshotTokenForEnrichment[]>;
-  getOverview(snapshotId: number, minBalanceUsd?: number, minSmwIn?: number, minLiquidityUsd?: number): StorageResult<TokenOverviewRow[]>;
+  getOverview(
+    snapshotId: number,
+    minBalanceUsd?: number,
+    minSmwIn?: number,
+    minLiquidityUsd?: number,
+    maxMarketCapUsd?: number | null,
+  ): StorageResult<TokenOverviewRow[]>;
   getTokenHolders(snapshotId: number, tokenKey: string, minBalanceUsd?: number): StorageResult<TokenHolderRow[]>;
   upsertBlacklist(input: {
     tokenKey: string;
