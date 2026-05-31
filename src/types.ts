@@ -124,6 +124,7 @@ export type TokenOverviewRow = {
   tokenAddress: string | null;
   holdingsUsd: number;
   smwIn: number;
+  score: number;
   marketCap: number | null;
   tokenAgeHours: number | null;
   moniScore: number | null;

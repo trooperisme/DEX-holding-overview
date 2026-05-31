@@ -1,4 +1,5 @@
 import { resolveWorkspacePaths } from "./runtime-paths";
+import { withOpportunityScore } from "./scoring";
 import { createPostgresStorage } from "./storage-postgres";
 import { SnapshotTokenForEnrichment, SnapshotUpdate, StorageAdapter } from "./storage-types";
 import {
@@ -445,7 +446,7 @@ function createSqliteStorage(cwd: string): StorageAdapter {
       minLiquidityUsd = 11111,
       maxMarketCapUsd: number | null = null,
     ): TokenOverviewRow[] {
-      return db
+      const rows = db
         .prepare(
           `SELECT
               rh.token_key as tokenKey,
@@ -492,7 +493,10 @@ function createSqliteStorage(cwd: string): StorageAdapter {
              )
            ORDER BY smwIn DESC, holdingsUsd DESC, tokenSymbol COLLATE NOCASE ASC`,
         )
-        .all(snapshotId, minBalanceUsd, minSmwIn, minLiquidityUsd, maxMarketCapUsd, maxMarketCapUsd) as TokenOverviewRow[];
+        .all(snapshotId, minBalanceUsd, minSmwIn, minLiquidityUsd, maxMarketCapUsd, maxMarketCapUsd) as Array<
+        Omit<TokenOverviewRow, "score">
+      >;
+      return rows.map(withOpportunityScore);
     },
 
     getTokenHolders(snapshotId: number, tokenKey: string, minBalanceUsd = 111): TokenHolderRow[] {

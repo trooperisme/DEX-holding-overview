@@ -1,4 +1,5 @@
 import { Pool, PoolClient } from "pg";
+import { withOpportunityScore } from "./scoring";
 import {
   EntityFetchRunRecord,
   EntityRecord,
@@ -94,7 +95,7 @@ function mapEntity(row: any): EntityRecord {
 }
 
 function mapOverview(row: any): TokenOverviewRow {
-  return {
+  return withOpportunityScore({
     tokenKey: row.token_key,
     tokenSymbol: row.token_symbol,
     tokenName: row.token_name,
@@ -112,7 +113,7 @@ function mapOverview(row: any): TokenOverviewRow {
     moniMomentumRank: numberOrNull(row.moni_momentum_rank),
     volume24h: numberOrNull(row.volume_24h),
     txns24h: numberOrNull(row.txns_24h),
-  };
+  });
 }
 
 export function createPostgresStorage(): StorageAdapter {

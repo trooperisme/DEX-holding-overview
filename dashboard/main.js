@@ -31,7 +31,7 @@ const state = {
   rows: [],
   openTokenKey: null,
   holders: new Map(),
-  sortKey: "smwIn",
+  sortKey: "score",
   sortDir: "desc",
   maxMarketCapUsd: null,
   refreshJob: null,
@@ -61,6 +61,14 @@ function fmtUsdOrDash(value) {
   const numeric = Number(value);
   if (!Number.isFinite(numeric) || numeric <= 0) return "—";
   return fmtUsd(numeric);
+}
+
+function fmtScore(value) {
+  const numeric = Number(value || 0);
+  if (!Number.isFinite(numeric) || numeric <= 0) return "—";
+  if (numeric >= 1_000_000) return `${(numeric / 1_000_000).toFixed(1)}M`;
+  if (numeric >= 1_000) return `${(numeric / 1_000).toFixed(1)}k`;
+  return Math.round(numeric).toLocaleString("en-US");
 }
 
 function parseMarketCapFilterInput() {
@@ -370,7 +378,7 @@ function buildDrilldownRows(tokenKey) {
   if (!rows) {
     return `
       <tr class="drilldown-row">
-        <td colspan="9">
+        <td colspan="10">
           <div class="drilldown-panel">
             <div class="empty-note">Loading entity breakdown...</div>
           </div>
@@ -408,7 +416,7 @@ function renderTable() {
   if (!rows.length) {
     els.tableBody.innerHTML = `
         <tr>
-        <td colspan="9">
+        <td colspan="10">
           <div class="drilldown-panel">
             <div class="empty-note">No token rows match the current snapshot and filters.</div>
           </div>
@@ -452,6 +460,7 @@ function renderTable() {
               <span>Click to view entity holders</span>
             </div>
           </td>
+          <td>${escapeHtml(fmtScore(row.score))}</td>
           <td>${escapeHtml(fmtUsdOrDash(row.marketCap))}</td>
           <td>${networkBadge || '<span class="chain-text">Unknown</span>'}</td>
           <td>${escapeHtml(fmtTokenAge(row.tokenAgeHours))}</td>
