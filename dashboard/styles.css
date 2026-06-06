@@ -10,6 +10,8 @@
   --text: #eef2f7;
   --muted: #94a0af;
   --accent: #5af2c4;
+  --metric-bar: rgba(90, 242, 196, 0.14);
+  --metric-bar-edge: rgba(90, 242, 196, 0.08);
   --accent-2: #ffbf69;
   --danger: #ff8f8f;
   --warning: #ffd479;
@@ -441,6 +443,29 @@ th {
 
 .signal-row:hover {
   background: rgba(255, 255, 255, 0.015);
+}
+
+.metric-cell {
+  position: relative;
+  isolation: isolate;
+  min-width: 128px;
+  overflow: hidden;
+}
+
+.metric-cell__bar {
+  position: absolute;
+  z-index: 0;
+  inset: 0 auto 0 0;
+  background: linear-gradient(90deg, var(--metric-bar), var(--metric-bar-edge));
+  border-right: 1px solid rgba(90, 242, 196, 0.16);
+  pointer-events: none;
+  transition: width 220ms ease;
+}
+
+.metric-cell__value {
+  position: relative;
+  z-index: 1;
+  font-variant-numeric: tabular-nums;
 }
 
 .ticker-stack,

@@ -71,6 +71,25 @@ function fmtScore(value) {
   return Math.round(numeric).toLocaleString("en-US");
 }
 
+function getMetricMax(rows, key) {
+  return rows.reduce((max, row) => {
+    const numeric = Number(row?.[key]);
+    return Number.isFinite(numeric) && numeric > max ? numeric : max;
+  }, 0);
+}
+
+function buildMetricCell(value, max, formatter) {
+  const numeric = Number(value);
+  const width = Number.isFinite(numeric) && numeric > 0 && max > 0
+    ? Math.min(100, (numeric / max) * 100)
+    : 0;
+  const bar = width > 0
+    ? `<span class="metric-cell__bar" style="width: ${width.toFixed(3)}%" aria-hidden="true"></span>`
+    : "";
+
+  return `${bar}<span class="metric-cell__value">${escapeHtml(formatter(value))}</span>`;
+}
+
 function parseMarketCapFilterInput() {
   const numeric = Number(els.maxMarketCapInput.value || 0);
   return Number.isFinite(numeric) && numeric > 0 ? numeric : null;
@@ -432,6 +451,9 @@ function buildDrilldownRows(tokenKey) {
 
 function renderTable() {
   const rows = getSortedRows(state.rows);
+  const scoreMax = getMetricMax(state.rows, "score");
+  const holdingsUsdMax = getMetricMax(state.rows, "holdingsUsd");
+  const smwInMax = getMetricMax(state.rows, "smwIn");
   els.tableStatus.textContent = `${rows.length} rows`;
   updateSortButtons();
 
@@ -482,13 +504,13 @@ function renderTable() {
               <span>Click to view entity holders</span>
             </div>
           </td>
-          <td>${escapeHtml(fmtScore(row.score))}</td>
+          <td class="metric-cell">${buildMetricCell(row.score, scoreMax, fmtScore)}</td>
           <td>${escapeHtml(fmtUsdOrDash(row.marketCap))}</td>
           <td>${networkBadge || '<span class="chain-text">Unknown</span>'}</td>
           <td>${escapeHtml(fmtTokenAge(row.tokenAgeHours))}</td>
           <td>${buildMoniScoreCell(row)}</td>
-          <td>${escapeHtml(fmtUsd(row.holdingsUsd))}</td>
-          <td>${escapeHtml(String(row.smwIn))}</td>
+          <td class="metric-cell">${buildMetricCell(row.holdingsUsd, holdingsUsdMax, fmtUsd)}</td>
+          <td class="metric-cell">${buildMetricCell(row.smwIn, smwInMax, String)}</td>
           <td>
             <button class="danger-button" type="button" data-blacklist-key="${escapeHtml(row.tokenKey)}">
               Blacklist
