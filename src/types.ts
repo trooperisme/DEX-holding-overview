@@ -136,6 +136,13 @@ export type TokenOverviewRow = {
   txns24h: number | null;
 };
 
+export type TokenScorePoint = TokenOverviewRow & {
+  snapshotId: number;
+  snapshotStatus: SnapshotStatus;
+  snapshotCreatedAt: string;
+  snapshotFinishedAt: string | null;
+};
+
 export type TokenEnrichmentRecord = {
   id: number;
   tokenKey: string;

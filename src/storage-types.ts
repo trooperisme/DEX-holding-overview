@@ -9,6 +9,7 @@ import {
   TokenBlacklistRecord,
   TokenHolderRow,
   TokenOverviewRow,
+  TokenScorePoint,
 } from "./types";
 
 export type SnapshotTokenForEnrichment = {
@@ -68,6 +69,7 @@ export type StorageAdapter = {
     maxMarketCapUsd?: number | null,
   ): StorageResult<TokenOverviewRow[]>;
   getTokenHolders(snapshotId: number, tokenKey: string, minBalanceUsd?: number): StorageResult<TokenHolderRow[]>;
+  getTokenScoreHistory(tokenKey: string, minBalanceUsd?: number): StorageResult<TokenScorePoint[]>;
   upsertBlacklist(input: {
     tokenKey: string;
     tokenSymbol: string;

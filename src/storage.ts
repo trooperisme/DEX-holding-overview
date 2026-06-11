@@ -12,6 +12,7 @@ import {
   TokenBlacklistRecord,
   TokenHolderRow,
   TokenOverviewRow,
+  TokenScorePoint,
 } from "./types";
 
 export function createStorage(cwd: string): StorageAdapter {
@@ -518,6 +519,43 @@ function createSqliteStorage(cwd: string): StorageAdapter {
            ORDER BY rh.balance_usd DESC, e.entity_name COLLATE NOCASE ASC`,
         )
         .all(snapshotId, tokenKey, minBalanceUsd) as TokenHolderRow[];
+    },
+
+    getTokenScoreHistory(tokenKey: string, minBalanceUsd = 111): TokenScorePoint[] {
+      const rows = db
+        .prepare(
+          `SELECT
+              hs.id as snapshotId,
+              hs.status as snapshotStatus,
+              hs.created_at as snapshotCreatedAt,
+              hs.finished_at as snapshotFinishedAt,
+              rh.token_key as tokenKey,
+              MAX(rh.token_symbol) as tokenSymbol,
+              MAX(rh.token_name) as tokenName,
+              MAX(rh.network_name) as networkName,
+              MAX(rh.chain_id) as chainId,
+              MAX(rh.token_address) as tokenAddress,
+              ROUND(SUM(rh.balance_usd), 2) as holdingsUsd,
+              COUNT(DISTINCT rh.entity_id) as smwIn,
+              MAX(rh.market_cap) as marketCap,
+              MAX(rh.token_age_hours) as tokenAgeHours,
+              MAX(rh.moni_score) as moniScore,
+              MAX(rh.moni_level) as moniLevel,
+              MAX(rh.moni_level_name) as moniLevelName,
+              MAX(rh.moni_momentum_score_pct) as moniMomentumScorePct,
+              MAX(rh.moni_momentum_rank) as moniMomentumRank,
+              MAX(rh.volume_24h) as volume24h,
+              MAX(rh.txns_24h) as txns24h
+           FROM raw_holdings rh
+           INNER JOIN holding_snapshots hs ON hs.id = rh.snapshot_id
+           WHERE rh.token_key = ?
+             AND rh.balance_usd >= ?
+             AND hs.status IN ('success', 'partial')
+           GROUP BY hs.id, rh.token_key
+           ORDER BY datetime(COALESCE(hs.finished_at, hs.created_at)) ASC, hs.id ASC`,
+        )
+        .all(tokenKey, minBalanceUsd) as Array<Omit<TokenScorePoint, "score">>;
+      return rows.map(withOpportunityScore);
     },
 
     upsertBlacklist(input: {

@@ -10,6 +10,7 @@ import {
   TokenBlacklistRecord,
   TokenHolderRow,
   TokenOverviewRow,
+  TokenScorePoint,
 } from "./types";
 import { SnapshotTokenForEnrichment, SnapshotUpdate, StorageAdapter } from "./storage-types";
 
@@ -516,6 +517,61 @@ export function createPostgresStorage(): StorageAdapter {
         tokenSymbol: row.token_symbol,
         tokenName: row.token_name,
       }));
+    },
+
+    async getTokenScoreHistory(tokenKey: string, minBalanceUsd = 111): Promise<TokenScorePoint[]> {
+      const result = await getPool().query(
+        `SELECT
+            hs.id as "snapshotId",
+            hs.status as "snapshotStatus",
+            hs.created_at as "snapshotCreatedAt",
+            hs.finished_at as "snapshotFinishedAt",
+            rh.token_key as "tokenKey",
+            MAX(rh.token_symbol) as "tokenSymbol",
+            MAX(rh.token_name) as "tokenName",
+            MAX(rh.network_name) as "networkName",
+            MAX(rh.chain_id) as "chainId",
+            MAX(rh.token_address) as "tokenAddress",
+            ROUND(SUM(rh.balance_usd), 2) as "holdingsUsd",
+            COUNT(DISTINCT rh.entity_id) as "smwIn",
+            MAX(rh.market_cap) as "marketCap",
+            MAX(rh.token_age_hours) as "tokenAgeHours",
+            MAX(rh.moni_score) as "moniScore",
+            MAX(rh.moni_level) as "moniLevel",
+            MAX(rh.moni_level_name) as "moniLevelName",
+            MAX(rh.moni_momentum_score_pct) as "moniMomentumScorePct",
+            MAX(rh.moni_momentum_rank) as "moniMomentumRank",
+            MAX(rh.volume_24h) as "volume24h",
+            MAX(rh.txns_24h) as "txns24h"
+         FROM ${table("raw_holdings")} rh
+         INNER JOIN ${table("holding_snapshots")} hs ON hs.id = rh.snapshot_id
+         WHERE rh.token_key = $1
+           AND rh.balance_usd >= $2
+           AND hs.status IN ('success', 'partial')
+         GROUP BY hs.id, rh.token_key
+         ORDER BY COALESCE(hs.finished_at, hs.created_at) ASC, hs.id ASC`,
+        [tokenKey, minBalanceUsd],
+      );
+
+      const rows = result.rows.map((row) => ({
+        ...row,
+        snapshotId: Number(row.snapshotId),
+        snapshotCreatedAt: row.snapshotCreatedAt instanceof Date ? row.snapshotCreatedAt.toISOString() : String(row.snapshotCreatedAt),
+        snapshotFinishedAt: row.snapshotFinishedAt instanceof Date ? row.snapshotFinishedAt.toISOString() : row.snapshotFinishedAt ? String(row.snapshotFinishedAt) : null,
+        chainId: numberOrNull(row.chainId),
+        holdingsUsd: Number(row.holdingsUsd || 0),
+        smwIn: Number(row.smwIn || 0),
+        marketCap: numberOrNull(row.marketCap),
+        tokenAgeHours: numberOrNull(row.tokenAgeHours),
+        moniScore: numberOrNull(row.moniScore),
+        moniLevel: numberOrNull(row.moniLevel),
+        moniMomentumScorePct: numberOrNull(row.moniMomentumScorePct),
+        moniMomentumRank: numberOrNull(row.moniMomentumRank),
+        volume24h: numberOrNull(row.volume24h),
+        txns24h: numberOrNull(row.txns24h),
+      })) as Array<Omit<TokenScorePoint, "score">>;
+
+      return rows.map(withOpportunityScore);
     },
 
     async upsertBlacklist(input): Promise<void> {

@@ -1,6 +1,7 @@
 import path from "node:path";
 import dotenv from "dotenv";
 import express from "express";
+import { createAuthRouter, createPasswordProtection } from "./auth";
 import { createRefreshJobManager } from "./refresh-jobs";
 import { resolveWorkspacePaths } from "./runtime-paths";
 import { createStorage } from "./storage";
@@ -14,7 +15,11 @@ const paths = resolveWorkspacePaths(cwd);
 const refreshJobs = createRefreshJobManager(cwd);
 const STALE_REFRESH_AFTER_MS = Number(process.env.REFRESH_STALE_AFTER_MS || (process.env.VERCEL ? 330_000 : 1_800_000));
 
-app.use(express.json());
+app.disable("x-powered-by");
+app.set("trust proxy", 1);
+app.use(createAuthRouter());
+app.use(createPasswordProtection());
+app.use(express.json({ limit: "100kb" }));
 app.use("/dashboard", express.static(paths.dashboardDir));
 
 app.get("/", (_req, res) => {
@@ -176,6 +181,26 @@ app.get("/api/token-holders", async (req, res) => {
   try {
     res.json({
       rows: await storage.getTokenHolders(snapshotId, tokenKey, minBalanceUsd),
+    });
+  } catch (error) {
+    sendServerError(res, error);
+  } finally {
+    await storage.close();
+  }
+});
+
+app.get("/api/token-score-history", async (req, res) => {
+  const tokenKey = String(req.query.tokenKey || "");
+  const minBalanceUsd = Number(req.query.minBalanceUsd || 111);
+  if (!tokenKey) {
+    res.status(400).json({ error: "tokenKey is required" });
+    return;
+  }
+
+  const storage = createStorage(cwd);
+  try {
+    res.json({
+      rows: await storage.getTokenScoreHistory(tokenKey, minBalanceUsd),
     });
   } catch (error) {
     sendServerError(res, error);

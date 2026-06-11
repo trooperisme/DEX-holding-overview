@@ -22,6 +22,7 @@ const els = {
   jobProgressCount: document.getElementById("job-progress-count"),
   jobProgressFill: document.getElementById("job-progress-fill"),
   logStream: document.getElementById("log-stream"),
+  chartTooltip: document.getElementById("chart-tooltip"),
   sortButtons: Array.from(document.querySelectorAll("[data-sort-key]")),
 };
 
@@ -31,6 +32,13 @@ const state = {
   rows: [],
   openTokenKey: null,
   holders: new Map(),
+  scoreHistory: new Map(),
+  holderErrors: new Map(),
+  scoreHistoryErrors: new Map(),
+  loadingHolders: new Set(),
+  loadingScoreHistory: new Set(),
+  trendWindow: 10,
+  trendScale: "log",
   sortKey: "score",
   sortDir: "desc",
   maxMarketCapUsd: null,
@@ -98,6 +106,9 @@ function parseMarketCapFilterInput() {
 function clearOpenRows() {
   state.openTokenKey = null;
   state.holders.clear();
+  state.scoreHistory.clear();
+  state.holderErrors.clear();
+  state.scoreHistoryErrors.clear();
 }
 
 function fmtDate(value) {
@@ -112,6 +123,15 @@ function fmtDate(value) {
   });
 }
 
+function fmtDateShort(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Unknown";
+  return date.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+  });
+}
+
 function fmtTokenAge(value) {
   if (value == null || !Number.isFinite(Number(value))) return "Pending";
   const numeric = Number(value);
@@ -119,11 +139,187 @@ function fmtTokenAge(value) {
   return `${(numeric / 24).toFixed(1)}d`;
 }
 
+function fmtDeltaPct(value) {
+  if (value == null) return "—";
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return "—";
+  const sign = numeric > 0 ? "+" : "";
+  return `${sign}${numeric.toFixed(1)}%`;
+}
+
 function fmtMoniScoreValue(value) {
+  if (value == null) return null;
   const numeric = Number(value);
   if (!Number.isFinite(numeric)) return null;
   if (numeric < 1000) return Math.round(numeric).toLocaleString("en-US");
   return `${Math.round(numeric / 1000).toLocaleString("en-US")}k`;
+}
+
+function safeNumber(value, fallback = 0) {
+  if (value == null || value === "") return fallback;
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : fallback;
+}
+
+function smwBreadthMultiplier(smwInRaw) {
+  const smwIn = safeNumber(smwInRaw, 0);
+  if (smwIn <= 0) return 0.75;
+  if (smwIn === 1) return 0.9;
+  if (smwIn === 2) return 1.15;
+  if (smwIn === 3) return 1.35;
+  if (smwIn <= 5) return 1.55;
+  if (smwIn <= 10) return 1.8;
+  if (smwIn <= 20) return 2.05;
+  return 2.3;
+}
+
+function moniSocialMultiplier(row) {
+  const level = safeNumber(row.moniLevel, NaN);
+  const momentumPct = safeNumber(row.moniMomentumScorePct, NaN);
+  const momentumRank = safeNumber(row.moniMomentumRank, NaN);
+
+  if (!Number.isFinite(level) && !Number.isFinite(momentumPct)) return 1.0;
+
+  let quality = 1.0;
+  if (Number.isFinite(level)) {
+    if (level <= 1) quality = 0.85;
+    else if (level === 2) quality = 0.95;
+    else if (level === 3) quality = 1.05;
+    else if (level === 4) quality = 1.15;
+    else if (level === 5) quality = 1.25;
+    else if (level === 6) quality = 1.4;
+    else if (level >= 7) quality = 1.55;
+  }
+
+  let momentum = 1.0;
+  if (Number.isFinite(momentumPct)) {
+    if (momentumPct <= 0) momentum = 1.0;
+    else if (momentumPct < 100) momentum = 1.1;
+    else if (momentumPct < 300) momentum = 1.25;
+    else if (momentumPct < 700) momentum = 1.4;
+    else momentum = 1.6;
+  }
+
+  if (Number.isFinite(momentumRank) && momentumRank > 0) {
+    if (momentumRank <= 100) momentum += 0.2;
+    else if (momentumRank <= 500) momentum += 0.15;
+    else if (momentumRank <= 1000) momentum += 0.1;
+    else if (momentumRank <= 5000) momentum += 0.05;
+  }
+
+  return Math.min(2.2, Math.max(0.75, quality * momentum));
+}
+
+function holdingsToMarketCapFootprintMultiplier(holdingsUsdRaw, marketCapRaw) {
+  const holdingsUsd = safeNumber(holdingsUsdRaw, 0);
+  const marketCap = safeNumber(marketCapRaw, 0);
+  if (holdingsUsd <= 0 || marketCap <= 0) return 1.0;
+  const pct = (holdingsUsd / marketCap) * 100;
+  if (pct < 0.01) return 0.8;
+  if (pct < 0.05) return 0.9;
+  if (pct < 0.25) return 1.0;
+  if (pct < 1.0) return 1.15;
+  if (pct < 3.0) return 1.35;
+  if (pct < 8.0) return 1.5;
+  if (pct < 15.0) return 1.25;
+  return 0.9;
+}
+
+function marketCapAsymmetryMultiplier(marketCapRaw) {
+  const marketCap = safeNumber(marketCapRaw, 0);
+  if (marketCap <= 0) return 0.85;
+  if (marketCap < 100_000) return 0.7;
+  if (marketCap < 1_000_000) return 1.05;
+  if (marketCap < 10_000_000) return 1.35;
+  if (marketCap < 50_000_000) return 1.25;
+  if (marketCap < 200_000_000) return 1.05;
+  if (marketCap < 1_000_000_000) return 0.75;
+  return 0.45;
+}
+
+function tokenAgeMultiplier(tokenAgeHoursRaw) {
+  const hours = safeNumber(tokenAgeHoursRaw, NaN);
+  if (!Number.isFinite(hours)) return 0.95;
+  const days = hours / 24;
+  if (days < 1) return 0.7;
+  if (days < 7) return 0.85;
+  if (days < 30) return 1.0;
+  if (days < 180) return 1.1;
+  if (days < 730) return 1.0;
+  return 0.85;
+}
+
+function scoreFactors(point) {
+  return {
+    holdingsUsd: safeNumber(point.holdingsUsd, 0),
+    smwBreadth: smwBreadthMultiplier(point.smwIn),
+    moniSocial: moniSocialMultiplier(point),
+    footprint: holdingsToMarketCapFootprintMultiplier(point.holdingsUsd, point.marketCap),
+    asymmetry: marketCapAsymmetryMultiplier(point.marketCap),
+    age: tokenAgeMultiplier(point.tokenAgeHours),
+  };
+}
+
+function factorRows(prev, current) {
+  if (!prev) return [];
+  const currFactors = scoreFactors(current);
+  const prevFactors = scoreFactors(prev);
+  const rows = [
+    {
+      label: "Holdings",
+      before: fmtUsd(prev.holdingsUsd),
+      after: fmtUsd(current.holdingsUsd),
+      beforeValue: prevFactors.holdingsUsd,
+      afterValue: currFactors.holdingsUsd,
+    },
+    {
+      label: "SMW breadth",
+      before: `${prev.smwIn ?? "—"} (${prevFactors.smwBreadth.toFixed(2)}x)`,
+      after: `${current.smwIn ?? "—"} (${currFactors.smwBreadth.toFixed(2)}x)`,
+      beforeValue: prevFactors.smwBreadth,
+      afterValue: currFactors.smwBreadth,
+    },
+    {
+      label: "Market cap footprint",
+      before: `${fmtUsdOrDash(prev.marketCap)} (${prevFactors.footprint.toFixed(2)}x)`,
+      after: `${fmtUsdOrDash(current.marketCap)} (${currFactors.footprint.toFixed(2)}x)`,
+      beforeValue: prevFactors.footprint,
+      afterValue: currFactors.footprint,
+    },
+    {
+      label: "Asymmetry",
+      before: `${fmtUsdOrDash(prev.marketCap)} (${prevFactors.asymmetry.toFixed(2)}x)`,
+      after: `${fmtUsdOrDash(current.marketCap)} (${currFactors.asymmetry.toFixed(2)}x)`,
+      beforeValue: prevFactors.asymmetry,
+      afterValue: currFactors.asymmetry,
+    },
+    {
+      label: "MONI",
+      before: prev.moniScore == null ? "Pending" : `${fmtMoniScoreValue(prev.moniScore)} · ${String(prev.moniLevelName || "—")}`,
+      after: current.moniScore == null ? "Pending" : `${fmtMoniScoreValue(current.moniScore)} · ${String(current.moniLevelName || "—")}`,
+      beforeValue: prevFactors.moniSocial,
+      afterValue: currFactors.moniSocial,
+    },
+    {
+      label: "Token age",
+      before: fmtTokenAge(prev.tokenAgeHours),
+      after: fmtTokenAge(current.tokenAgeHours),
+      beforeValue: prevFactors.age,
+      afterValue: currFactors.age,
+    },
+  ];
+
+  return rows
+    .map((row) => {
+      const delta = row.afterValue / Math.max(0.0001, row.beforeValue);
+      const deltaPct = (delta - 1) * 100;
+      return {
+        ...row,
+        deltaPct,
+        direction: deltaPct > 0 ? "positive" : deltaPct < 0 ? "negative" : "",
+      };
+    })
+    .sort((a, b) => Math.abs(b.deltaPct) - Math.abs(a.deltaPct));
 }
 
 function buildMoniScoreCell(row) {
@@ -289,8 +485,7 @@ async function syncRefreshStatus(options = {}) {
   }
 
   if (wasRunning && !nextJob?.running) {
-    state.openTokenKey = null;
-    state.holders.clear();
+    clearOpenRows();
     const status = nextJob?.progress?.status;
     const totalRows = Number(nextJob?.progress?.totalRows || 0);
     if (nextJob?.progress?.snapshotId && (status === "success" || status === "partial" || totalRows > 0)) {
@@ -414,21 +609,265 @@ function renderSnapshots() {
     .join("");
 }
 
+function getPointTime(point) {
+  return point.snapshotFinishedAt || point.snapshotCreatedAt;
+}
+
+function getVisibleTrendPoints(points) {
+  return state.trendWindow === "all" ? points : points.slice(-Number(state.trendWindow || 10));
+}
+
+function getScoreDeltaPct(previous, current) {
+  const previousScore = Number(previous?.score || 0);
+  if (!previousScore) return null;
+  return ((Number(current?.score || 0) - previousScore) / previousScore) * 100;
+}
+
+function buildScoreChart(points, tokenKey) {
+  const width = 760;
+  const height = 230;
+  const padding = { top: 24, right: 26, bottom: 38, left: 68 };
+  const chartWidth = width - padding.left - padding.right;
+  const chartHeight = height - padding.top - padding.bottom;
+  const scores = points.map((point) => Math.max(1, Number(point.score || 0))).filter((score) => Number.isFinite(score));
+  const transform = state.trendScale === "log" ? (score) => Math.log10(Math.max(1, score)) : (score) => score;
+  const inverse = state.trendScale === "log" ? (value) => 10 ** value : (value) => value;
+  const transformedScores = scores.map(transform);
+  const rawMin = Math.min(...transformedScores);
+  const rawMax = Math.max(...transformedScores);
+  const rawSpread = rawMax - rawMin;
+  const paddingValue = rawSpread > 0 ? rawSpread * 0.12 : Math.max(1, Math.abs(rawMax) * 0.08);
+  const minScore = rawMin - paddingValue;
+  const maxScore = rawMax + paddingValue;
+  const spread = Math.max(0.0001, maxScore - minScore);
+  const xFor = (index) => padding.left + (points.length <= 1 ? chartWidth / 2 : (index / (points.length - 1)) * chartWidth);
+  const yFor = (score) => padding.top + chartHeight - ((transform(Number(score || 0)) - minScore) / spread) * chartHeight;
+  const pathPoints = points.map((point, index) => `${xFor(index).toFixed(2)},${yFor(point.score).toFixed(2)}`).join(" ");
+  const yTicks = [maxScore, minScore + spread / 2, minScore].map(inverse);
+  const xLabels = points.length > 6
+    ? points.filter((_, index) => index === 0 || index === points.length - 1 || index === Math.floor((points.length - 1) / 2))
+    : points;
+
+  return `
+    <svg class="score-chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="Score trend chart using ${escapeHtml(state.trendScale)} scale">
+      <line class="score-chart__axis" x1="${padding.left}" y1="${padding.top + chartHeight}" x2="${padding.left + chartWidth}" y2="${padding.top + chartHeight}"></line>
+      ${yTicks
+        .map((tick) => {
+          const y = yFor(tick);
+          return `
+            <line class="score-chart__grid" x1="${padding.left}" y1="${y.toFixed(2)}" x2="${padding.left + chartWidth}" y2="${y.toFixed(2)}"></line>
+            <text class="score-chart__label" x="${padding.left - 14}" y="${(y + 4).toFixed(2)}" text-anchor="end">${escapeHtml(fmtScore(tick))}</text>
+          `;
+        })
+        .join("")}
+      <polyline class="score-chart__line" points="${pathPoints}"></polyline>
+      ${points
+        .map((point, index) => {
+          const x = xFor(index);
+          const y = yFor(point.score);
+          return `
+            <circle
+              class="score-chart__dot"
+              cx="${x.toFixed(2)}"
+              cy="${y.toFixed(2)}"
+              r="5"
+              tabindex="0"
+              data-chart-token-key="${escapeHtml(tokenKey)}"
+              data-chart-snapshot-id="${escapeHtml(point.snapshotId)}"
+            >
+              <title>Snapshot #${escapeHtml(point.snapshotId)} · ${escapeHtml(fmtDate(getPointTime(point)))} · ${escapeHtml(fmtScore(point.score))}</title>
+            </circle>
+          `;
+        })
+        .join("")}
+      ${xLabels
+        .map((point, index) => {
+          const originalIndex = points.indexOf(point);
+          const x = xFor(originalIndex);
+          return `
+            <text class="score-chart__label" x="${x.toFixed(2)}" y="${height - 11}" text-anchor="${index === 0 ? "start" : index === xLabels.length - 1 ? "end" : "middle"}">
+              #${escapeHtml(point.snapshotId)} · ${escapeHtml(fmtDateShort(getPointTime(point)))}
+            </text>
+          `;
+        })
+        .join("")}
+    </svg>
+  `;
+}
+
+function buildScoreHistoryRows(allPoints, visiblePoints) {
+  return visiblePoints
+    .reverse()
+    .map((point) => {
+      const previous = allPoints[allPoints.findIndex((item) => item.snapshotId === point.snapshotId) - 1];
+      const deltaPct = getScoreDeltaPct(previous, point);
+      const deltaClass = Number(deltaPct) > 0 ? "is-positive" : Number(deltaPct) < 0 ? "is-negative" : "";
+      return `
+        <tr>
+          <td>#${escapeHtml(point.snapshotId)}</td>
+          <td>${escapeHtml(fmtDateShort(getPointTime(point)))}</td>
+          <td>${escapeHtml(fmtScore(point.score))}</td>
+          <td class="${deltaClass}">${escapeHtml(fmtDeltaPct(deltaPct))}</td>
+          <td>${escapeHtml(fmtUsd(point.holdingsUsd))}</td>
+          <td>${escapeHtml(point.smwIn)}</td>
+          <td>${escapeHtml(fmtUsdOrDash(point.marketCap))}</td>
+          <td>${escapeHtml(fmtMoniScoreValue(point.moniScore) || "Pending")}</td>
+        </tr>
+      `;
+    })
+    .join("");
+}
+
+function buildDriverExplanation(previous, latest) {
+  const drivers = factorRows(previous, latest);
+  if (!drivers.length) {
+    return `
+      <section class="trend-explain">
+        <div>
+          <h4>What moved</h4>
+          <p>At least two snapshots are required to explain the latest score change.</p>
+        </div>
+      </section>
+    `;
+  }
+
+  return `
+    <section class="trend-explain">
+      <div class="trend-explain__header">
+        <div>
+          <h4>What moved</h4>
+          <p>Latest snapshot versus previous snapshot. Ranked by estimated scoring impact.</p>
+        </div>
+        <span>#${escapeHtml(previous.snapshotId)} → #${escapeHtml(latest.snapshotId)}</span>
+      </div>
+      <div class="trend-driver-grid">
+        ${drivers
+          .map(
+            (driver) => `
+              <article class="trend-driver trend-driver--${escapeHtml(driver.direction || "flat")}">
+                <div class="trend-driver__title">
+                  <strong>${escapeHtml(driver.label)}</strong>
+                  <span>${escapeHtml(fmtDeltaPct(driver.deltaPct))}</span>
+                </div>
+                <p>${escapeHtml(driver.before)} → ${escapeHtml(driver.after)}</p>
+              </article>
+            `,
+          )
+          .join("")}
+      </div>
+    </section>
+  `;
+}
+
+function buildScoreTrendPanel(tokenKey) {
+  const points = state.scoreHistory.get(tokenKey);
+  const error = state.scoreHistoryErrors.get(tokenKey);
+  if (error) {
+    return `
+      <div class="trend-panel">
+        <div class="empty-note empty-note--error">Could not load score trend: ${escapeHtml(error)}</div>
+      </div>
+    `;
+  }
+  if (!points) {
+    return `
+      <div class="trend-panel">
+        <div class="empty-note">Loading score trend...</div>
+      </div>
+    `;
+  }
+  if (!points.length) {
+    return `
+      <div class="trend-panel">
+        <div class="empty-note">No historical score points found for this token yet.</div>
+      </div>
+    `;
+  }
+
+  const latest = points.at(-1);
+  const previous = points.at(-2);
+  const visiblePoints = getVisibleTrendPoints(points);
+  const deltaPct = getScoreDeltaPct(previous, latest);
+  const deltaClass = Number(deltaPct) > 0 ? "is-positive" : Number(deltaPct) < 0 ? "is-negative" : "";
+  const windowLabel = state.trendWindow === "all" ? "All" : `Last ${state.trendWindow}`;
+
+  return `
+    <div class="trend-panel">
+      <div class="trend-panel__header">
+        <div>
+          <h3>Score Trend</h3>
+          <p>Showing ${visiblePoints.length} of ${points.length} snapshot point${points.length === 1 ? "" : "s"} · manual refresh history</p>
+        </div>
+        <div class="trend-stats">
+          <span>${escapeHtml(fmtScore(latest.score))}</span>
+          <strong class="${deltaClass}">${escapeHtml(fmtDeltaPct(deltaPct))}</strong>
+        </div>
+      </div>
+      <div class="trend-actions" aria-label="Score trend display controls">
+        <div class="trend-toggle">
+          <span>Range</span>
+          <button type="button" data-trend-window="10" class="${state.trendWindow === 10 ? "is-active" : ""}">Last 10</button>
+          <button type="button" data-trend-window="all" class="${state.trendWindow === "all" ? "is-active" : ""}">All</button>
+        </div>
+        <div class="trend-toggle">
+          <span>Scale</span>
+          <button type="button" data-trend-scale="log" class="${state.trendScale === "log" ? "is-active" : ""}">Log</button>
+          <button type="button" data-trend-scale="linear" class="${state.trendScale === "linear" ? "is-active" : ""}">Linear</button>
+        </div>
+        <span class="trend-actions__meta">${escapeHtml(windowLabel)} · ${escapeHtml(state.trendScale)} scale</span>
+      </div>
+      ${buildScoreChart(visiblePoints, tokenKey)}
+      ${buildDriverExplanation(previous, latest)}
+      <div class="trend-table-wrap">
+        <table class="trend-table">
+          <thead>
+            <tr>
+              <th>Snapshot</th>
+              <th>Date</th>
+              <th>Score</th>
+              <th>Delta</th>
+              <th>Holdings</th>
+              <th>SMW</th>
+              <th>Market Cap</th>
+              <th>MONI</th>
+            </tr>
+          </thead>
+          <tbody>${buildScoreHistoryRows(points, [...visiblePoints])}</tbody>
+        </table>
+      </div>
+    </div>
+  `;
+}
+
 function buildDrilldownRows(tokenKey) {
   const rows = state.holders.get(tokenKey);
+  const holderError = state.holderErrors.get(tokenKey);
+  const trendPanel = buildScoreTrendPanel(tokenKey);
+  const trendRow = `
+    <tr class="drilldown-row">
+      <td colspan="10">
+        <div class="drilldown-panel">
+          ${trendPanel}
+        </div>
+      </td>
+    </tr>
+  `;
   if (!rows) {
     return `
-      <tr class="drilldown-row">
+      ${trendRow}
+      <tr class="drilldown-row drilldown-loading-row">
         <td colspan="10">
           <div class="drilldown-panel">
-            <div class="empty-note">Loading entity breakdown...</div>
+            <div class="empty-note ${holderError ? "empty-note--error" : ""}">
+              ${holderError ? `Could not load entity breakdown: ${escapeHtml(holderError)}` : "Loading entity breakdown..."}
+            </div>
           </div>
         </td>
       </tr>
     `;
   }
 
-  return rows
+  return trendRow + rows
     .map(
       (row) => `
         <tr class="drilldown-row drilldown-holder-row">
@@ -577,15 +1016,44 @@ async function loadOverview() {
 }
 
 async function loadHolders(tokenKey) {
-  if (state.holders.has(tokenKey)) return;
+  if (state.holders.has(tokenKey) || state.loadingHolders.has(tokenKey)) return;
+  state.loadingHolders.add(tokenKey);
+  state.holderErrors.delete(tokenKey);
   const minBalanceUsd = Number(els.minBalanceInput.value || 111);
   const params = new URLSearchParams({
     snapshotId: String(state.selectedSnapshotId),
     tokenKey,
     minBalanceUsd: String(minBalanceUsd),
   });
-  const payload = await fetchJson(`/api/token-holders?${params.toString()}`);
-  state.holders.set(tokenKey, Array.isArray(payload.rows) ? payload.rows : []);
+  try {
+    const payload = await fetchJson(`/api/token-holders?${params.toString()}`);
+    state.holders.set(tokenKey, Array.isArray(payload.rows) ? payload.rows : []);
+  } catch (error) {
+    state.holderErrors.set(tokenKey, error instanceof Error ? error.message : "Unexpected error");
+  } finally {
+    state.loadingHolders.delete(tokenKey);
+    if (state.openTokenKey === tokenKey) renderTable();
+  }
+}
+
+async function loadScoreHistory(tokenKey) {
+  if (state.scoreHistory.has(tokenKey) || state.loadingScoreHistory.has(tokenKey)) return;
+  state.loadingScoreHistory.add(tokenKey);
+  state.scoreHistoryErrors.delete(tokenKey);
+  const minBalanceUsd = Number(els.minBalanceInput.value || 111);
+  const params = new URLSearchParams({
+    tokenKey,
+    minBalanceUsd: String(minBalanceUsd),
+  });
+  try {
+    const payload = await fetchJson(`/api/token-score-history?${params.toString()}`);
+    state.scoreHistory.set(tokenKey, Array.isArray(payload.rows) ? payload.rows : []);
+  } catch (error) {
+    state.scoreHistoryErrors.set(tokenKey, error instanceof Error ? error.message : "Unexpected error");
+  } finally {
+    state.loadingScoreHistory.delete(tokenKey);
+    if (state.openTokenKey === tokenKey) renderTable();
+  }
 }
 
 async function handleRefresh() {
@@ -604,8 +1072,7 @@ async function handleRefresh() {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ apiKey }),
     });
-    state.openTokenKey = null;
-    state.holders.clear();
+    clearOpenRows();
     await syncRefreshStatus({ silent: true });
     startRefreshPolling();
   } catch (error) {
@@ -629,6 +1096,22 @@ async function handleCancel() {
 document.addEventListener("click", async (event) => {
   const target = event.target;
   if (!(target instanceof HTMLElement)) return;
+
+  const trendWindowButton = target.closest("[data-trend-window]");
+  if (trendWindowButton instanceof HTMLElement) {
+    event.stopPropagation();
+    state.trendWindow = trendWindowButton.dataset.trendWindow === "all" ? "all" : 10;
+    renderTable();
+    return;
+  }
+
+  const trendScaleButton = target.closest("[data-trend-scale]");
+  if (trendScaleButton instanceof HTMLElement) {
+    event.stopPropagation();
+    state.trendScale = trendScaleButton.dataset.trendScale === "linear" ? "linear" : "log";
+    renderTable();
+    return;
+  }
 
   const copyButton = target.closest("[data-copy-contract]");
   if (copyButton instanceof HTMLElement) {
@@ -680,6 +1163,9 @@ document.addEventListener("click", async (event) => {
     });
     state.openTokenKey = null;
     state.holders.delete(row.tokenKey);
+    state.scoreHistory.delete(row.tokenKey);
+    state.holderErrors.delete(row.tokenKey);
+    state.scoreHistoryErrors.delete(row.tokenKey);
     await loadOverview();
     setBanner(`${row.tokenSymbol} blacklisted. It will stay hidden until restored.`, "success");
     return;
@@ -692,18 +1178,81 @@ document.addEventListener("click", async (event) => {
     state.openTokenKey = state.openTokenKey === tokenKey ? null : tokenKey;
     renderTable();
     if (state.openTokenKey === tokenKey) {
-      await loadHolders(tokenKey);
-      renderTable();
+      void loadScoreHistory(tokenKey);
+      void loadHolders(tokenKey);
     }
   }
 });
+
+function hideChartTooltip() {
+  if (!els.chartTooltip) return;
+  els.chartTooltip.hidden = true;
+}
+
+function showChartTooltip(dot, event) {
+  if (!els.chartTooltip) return;
+  const tokenKey = dot.getAttribute("data-chart-token-key");
+  const snapshotId = Number(dot.getAttribute("data-chart-snapshot-id"));
+  const points = state.scoreHistory.get(tokenKey) || [];
+  const pointIndex = points.findIndex((point) => Number(point.snapshotId) === snapshotId);
+  const point = points[pointIndex];
+  if (!point) return;
+  const deltaPct = getScoreDeltaPct(points[pointIndex - 1], point);
+  const deltaClass = Number(deltaPct) > 0 ? "is-positive" : Number(deltaPct) < 0 ? "is-negative" : "";
+
+  els.chartTooltip.innerHTML = `
+    <div class="chart-tooltip__header">
+      <strong>Snapshot #${escapeHtml(point.snapshotId)}</strong>
+      <span>${escapeHtml(fmtDate(getPointTime(point)))}</span>
+    </div>
+    <div class="chart-tooltip__score">
+      <span>Score</span>
+      <strong>${escapeHtml(fmtScore(point.score))}</strong>
+    </div>
+    <dl>
+      <div><dt>Δ vs previous</dt><dd class="${deltaClass}">${escapeHtml(fmtDeltaPct(deltaPct))}</dd></div>
+      <div><dt>Holdings</dt><dd>${escapeHtml(fmtUsd(point.holdingsUsd))}</dd></div>
+      <div><dt>SMW In</dt><dd>${escapeHtml(point.smwIn)}</dd></div>
+      <div><dt>Market Cap</dt><dd>${escapeHtml(fmtUsdOrDash(point.marketCap))}</dd></div>
+      <div><dt>MONI</dt><dd>${escapeHtml(fmtMoniScoreValue(point.moniScore) || "Pending")}</dd></div>
+    </dl>
+  `;
+  els.chartTooltip.hidden = false;
+
+  const margin = 14;
+  const rect = els.chartTooltip.getBoundingClientRect();
+  const x = Math.min(window.innerWidth - rect.width - margin, Math.max(margin, event.clientX + margin));
+  const y = Math.min(window.innerHeight - rect.height - margin, Math.max(margin, event.clientY + margin));
+  els.chartTooltip.style.left = `${x}px`;
+  els.chartTooltip.style.top = `${y}px`;
+}
+
+document.addEventListener("pointermove", (event) => {
+  const target = event.target;
+  if (!(target instanceof Element)) return;
+  const dot = target.closest("[data-chart-snapshot-id]");
+  if (dot) {
+    showChartTooltip(dot, event);
+  } else {
+    hideChartTooltip();
+  }
+});
+
+document.addEventListener("focusin", (event) => {
+  const target = event.target;
+  if (!(target instanceof Element) || !target.matches("[data-chart-snapshot-id]")) return;
+  const rect = target.getBoundingClientRect();
+  showChartTooltip(target, { clientX: rect.left + rect.width / 2, clientY: rect.top + rect.height / 2 });
+});
+
+document.addEventListener("focusout", hideChartTooltip);
 
 els.refreshButton.addEventListener("click", handleRefresh);
 els.cancelButton.addEventListener("click", handleCancel);
 els.snapshotSelect.addEventListener("change", async () => {
   state.selectedSnapshotId = Number(els.snapshotSelect.value || 0) || null;
   clearOpenRows();
-  updateSummary(getSelectedSnapshot());
+  updateSummary(state.snapshots.find((item) => item.id === state.selectedSnapshotId) || null);
   await loadOverview();
 });
 

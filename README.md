@@ -2,6 +2,11 @@
 
 Local DEX holdings dashboard for Zapper bundle entities.
 
+The dashboard and all API routes require a private login. Set
+`DASHBOARD_PASSWORD` in the deployment environment. The local fallback password is
+`112233`; replace it before exposing the app publicly. Any username is accepted.
+For stable signed sessions across deploys, set `DASHBOARD_SESSION_SECRET` too.
+
 ## Features
 
 - Imports tracked entities from `data/raw/dex-entities-zapper.csv`

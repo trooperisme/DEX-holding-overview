@@ -280,6 +280,7 @@ export async function runDexRefresh(options: {
   let totalRows = 0;
   let aborted = false;
   let enrichmentFailed = 0;
+  const failureReasons = new Map<string, number>();
 
   const throwIfAborted = (): void => {
     if (signal?.aborted) {
@@ -425,6 +426,7 @@ export async function runDexRefresh(options: {
 
         entitiesFailed += 1;
         const message = (error as Error).message;
+        failureReasons.set(message, (failureReasons.get(message) || 0) + 1);
         await storage.updateEntityFetchRun(runId, {
           status: "failed",
           rowsFound: 0,
@@ -485,9 +487,16 @@ export async function runDexRefresh(options: {
           ? "partial"
           : "success";
 
+    const dominantFailureMessage =
+      failureReasons.size > 0
+        ? Array.from(failureReasons.entries()).sort((left, right) => right[1] - left[1])[0][0]
+        : null;
+
     const errorMessage =
       status === "failed"
-        ? "All entity fetches failed"
+        ? dominantFailureMessage
+          ? `All entity fetches failed: ${dominantFailureMessage}`
+          : "All entity fetches failed"
         : status === "canceled"
           ? "Refresh canceled by user"
           : null;
@@ -525,7 +534,7 @@ export async function runDexRefresh(options: {
     } else if (status === "canceled") {
       emitLog(callbacks, "warning", `Refresh canceled after ${entitiesCompleted} completed and ${entitiesFailed} failed.`);
     } else {
-      emitLog(callbacks, "error", "All entity fetches failed.");
+      emitLog(callbacks, "error", errorMessage || "All entity fetches failed.");
     }
 
     if (enrichmentFailed > 0) {
