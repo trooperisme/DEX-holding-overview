@@ -657,18 +657,16 @@ th {
 }
 
 .trend-stats strong,
-.trend-table .is-positive,
-.trend-table .is-negative {
+.trend-driver__title span,
+.chart-tooltip dd {
   font-weight: 800;
 }
 
-.trend-stats .is-positive,
-.trend-table .is-positive {
+.trend-stats .is-positive {
   color: var(--accent);
 }
 
 .trend-stats .is-negative,
-.trend-table .is-negative,
 .chart-tooltip .is-negative {
   color: var(--danger);
 }
@@ -762,23 +760,6 @@ th {
 .score-chart__label {
   fill: var(--muted);
   font: 700 12px "Manrope", sans-serif;
-}
-
-.trend-table-wrap {
-  overflow: auto;
-  border: 1px solid var(--line);
-  border-radius: 14px;
-}
-
-.trend-table th,
-.trend-table td {
-  padding: 11px 12px;
-  border-top-color: rgba(255, 255, 255, 0.05);
-  font-size: 0.82rem;
-}
-
-.trend-table th {
-  background: rgba(255, 255, 255, 0.02);
 }
 
 .trend-explain {
@@ -891,7 +872,6 @@ th {
 
 .chart-tooltip dd {
   margin: 0;
-  font-weight: 800;
 }
 
 .drilldown-entity {

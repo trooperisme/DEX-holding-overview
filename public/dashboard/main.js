@@ -695,29 +695,6 @@ function buildScoreChart(points, tokenKey) {
   `;
 }
 
-function buildScoreHistoryRows(allPoints, visiblePoints) {
-  return visiblePoints
-    .reverse()
-    .map((point) => {
-      const previous = allPoints[allPoints.findIndex((item) => item.snapshotId === point.snapshotId) - 1];
-      const deltaPct = getScoreDeltaPct(previous, point);
-      const deltaClass = Number(deltaPct) > 0 ? "is-positive" : Number(deltaPct) < 0 ? "is-negative" : "";
-      return `
-        <tr>
-          <td>#${escapeHtml(point.snapshotId)}</td>
-          <td>${escapeHtml(fmtDateShort(getPointTime(point)))}</td>
-          <td>${escapeHtml(fmtScore(point.score))}</td>
-          <td class="${deltaClass}">${escapeHtml(fmtDeltaPct(deltaPct))}</td>
-          <td>${escapeHtml(fmtUsd(point.holdingsUsd))}</td>
-          <td>${escapeHtml(point.smwIn)}</td>
-          <td>${escapeHtml(fmtUsdOrDash(point.marketCap))}</td>
-          <td>${escapeHtml(fmtMoniScoreValue(point.moniScore) || "Pending")}</td>
-        </tr>
-      `;
-    })
-    .join("");
-}
-
 function buildDriverExplanation(previous, latest) {
   const drivers = factorRows(previous, latest);
   if (!drivers.length) {
@@ -818,23 +795,6 @@ function buildScoreTrendPanel(tokenKey) {
       </div>
       ${buildScoreChart(visiblePoints, tokenKey)}
       ${buildDriverExplanation(previous, latest)}
-      <div class="trend-table-wrap">
-        <table class="trend-table">
-          <thead>
-            <tr>
-              <th>Snapshot</th>
-              <th>Date</th>
-              <th>Score</th>
-              <th>Delta</th>
-              <th>Holdings</th>
-              <th>SMW</th>
-              <th>Market Cap</th>
-              <th>MONI</th>
-            </tr>
-          </thead>
-          <tbody>${buildScoreHistoryRows(points, [...visiblePoints])}</tbody>
-        </table>
-      </div>
     </div>
   `;
 }
