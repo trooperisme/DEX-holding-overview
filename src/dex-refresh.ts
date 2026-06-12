@@ -208,8 +208,27 @@ async function enrichSnapshotMoniScores(options: {
   );
 
   let enriched = 0;
+  let reused = 0;
   let failed = 0;
   let nextHandleIndex = 0;
+
+  const reusePriorMoniScores = async (candidates: typeof handleGroups[number]): Promise<number> => {
+    let reusedForGroup = 0;
+    for (const candidate of candidates) {
+      const fallback = await options.storage.getLatestTokenMoniDataBeforeSnapshot(
+        options.snapshotId,
+        candidate.tokenKey,
+      );
+      if (fallback) {
+        await options.storage.updateSnapshotTokenMoniData(options.snapshotId, candidate.tokenKey, fallback);
+        reused += 1;
+        reusedForGroup += 1;
+      } else {
+        failed += 1;
+      }
+    }
+    return reusedForGroup;
+  };
 
   const processHandleGroup = async (candidates: typeof handleGroups[number]): Promise<void> => {
     if (options.signal?.aborted) {
@@ -221,7 +240,7 @@ async function enrichSnapshotMoniScores(options: {
     try {
       const score = await fetchMoniScoreDataForToken(firecrawlApiKey, handle, tokenName, options.signal);
       if (!score) {
-        failed += candidates.length;
+        await reusePriorMoniScores(candidates);
         return;
       }
 
@@ -233,9 +252,15 @@ async function enrichSnapshotMoniScores(options: {
       if (isAbortError(error)) {
         throw error;
       }
-      failed += candidates.length;
+      const reusedForGroup = await reusePriorMoniScores(candidates);
       const message = error instanceof Error ? error.message : String(error);
-      emitLog(options.callbacks, "warning", `Moni Score lookup skipped for @${handle}: ${message}`);
+      emitLog(
+        options.callbacks,
+        reusedForGroup > 0 ? "info" : "warning",
+        reusedForGroup > 0
+          ? `Moni Score lookup failed for @${handle}; reused prior score for ${reusedForGroup}/${candidates.length} token(s): ${message}`
+          : `Moni Score lookup skipped for @${handle}: ${message}`,
+      );
     }
   };
 
@@ -257,8 +282,8 @@ async function enrichSnapshotMoniScores(options: {
     options.callbacks,
     failed > 0 ? "warning" : "success",
     failed > 0
-      ? `Moni Score enrichment finished: ${enriched}/${options.candidates.length} enriched, ${failed} pending.`
-      : `Moni Score enrichment finished: ${enriched}/${options.candidates.length} enriched.`,
+      ? `Moni Score enrichment finished: ${enriched}/${options.candidates.length} enriched, ${reused} reused from prior snapshots, ${failed} pending.`
+      : `Moni Score enrichment finished: ${enriched}/${options.candidates.length} enriched, ${reused} reused from prior snapshots.`,
   );
 }
 

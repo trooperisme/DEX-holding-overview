@@ -389,6 +389,34 @@ function createSqliteStorage(cwd: string): StorageAdapter {
       });
     },
 
+    getLatestTokenMoniDataBeforeSnapshot(snapshotId: number, tokenKey: string) {
+      const row = db
+        .prepare(
+          `SELECT
+              MAX(rh.moni_score) as moniScore,
+              MAX(rh.moni_level) as moniLevel,
+              MAX(rh.moni_level_name) as moniLevelName,
+              MAX(rh.moni_momentum_score_pct) as moniMomentumScorePct,
+              MAX(rh.moni_momentum_rank) as moniMomentumRank
+           FROM raw_holdings rh
+           WHERE rh.token_key = ?
+             AND rh.snapshot_id < ?
+             AND rh.moni_score IS NOT NULL
+           GROUP BY rh.snapshot_id
+           ORDER BY rh.snapshot_id DESC
+           LIMIT 1`,
+        )
+        .get(tokenKey, snapshotId) as {
+          moniScore: number;
+          moniLevel: number;
+          moniLevelName: string;
+          moniMomentumScorePct: number | null;
+          moniMomentumRank: number | null;
+        } | undefined;
+
+      return row || null;
+    },
+
     getSnapshotSummaries(): SnapshotRecord[] {
       return db
         .prepare(

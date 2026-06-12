@@ -3,6 +3,7 @@ import {
   EntityRecord,
   EntityWalletRecord,
   ImportedEntity,
+  MoniScoreData,
   RawHoldingRecord,
   SnapshotRecord,
   SnapshotStatus,
@@ -58,6 +59,7 @@ export type StorageAdapter = {
     moniMomentumScorePct: number | null;
     moniMomentumRank: number | null;
   }): StorageResult<void>;
+  getLatestTokenMoniDataBeforeSnapshot(snapshotId: number, tokenKey: string): StorageResult<MoniScoreData | null>;
   getSnapshotSummaries(): StorageResult<SnapshotRecord[]>;
   getLatestSnapshot(): StorageResult<SnapshotRecord | null>;
   getSnapshotTokensForEnrichment(snapshotId: number, minBalanceUsd?: number, minSmwIn?: number): StorageResult<SnapshotTokenForEnrichment[]>;

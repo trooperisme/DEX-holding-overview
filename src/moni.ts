@@ -1,10 +1,4 @@
-export type MoniScoreData = {
-  moniScore: number;
-  moniLevel: number;
-  moniLevelName: string;
-  moniMomentumScorePct: number | null;
-  moniMomentumRank: number | null;
-};
+import { MoniScoreData } from "./types";
 
 export function buildMoniUrl(twitterHandle: string): string {
   return `https://discover.getmoni.io/${encodeURIComponent(twitterHandle)}`;

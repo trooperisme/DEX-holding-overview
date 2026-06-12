@@ -379,6 +379,35 @@ export function createPostgresStorage(): StorageAdapter {
       );
     },
 
+    async getLatestTokenMoniDataBeforeSnapshot(snapshotId, tokenKey) {
+      const result = await getPool().query(
+        `SELECT
+            MAX(rh.moni_score) as moni_score,
+            MAX(rh.moni_level) as moni_level,
+            MAX(rh.moni_level_name) as moni_level_name,
+            MAX(rh.moni_momentum_score_pct) as moni_momentum_score_pct,
+            MAX(rh.moni_momentum_rank) as moni_momentum_rank
+         FROM ${table("raw_holdings")} rh
+         WHERE rh.token_key = $1
+           AND rh.snapshot_id < $2
+           AND rh.moni_score IS NOT NULL
+         GROUP BY rh.snapshot_id
+         ORDER BY rh.snapshot_id DESC
+         LIMIT 1`,
+        [tokenKey, snapshotId],
+      );
+
+      const row = result.rows[0];
+      if (!row) return null;
+      return {
+        moniScore: Number(row.moni_score),
+        moniLevel: Number(row.moni_level),
+        moniLevelName: row.moni_level_name,
+        moniMomentumScorePct: numberOrNull(row.moni_momentum_score_pct),
+        moniMomentumRank: numberOrNull(row.moni_momentum_rank),
+      };
+    },
+
     async getSnapshotSummaries(): Promise<SnapshotRecord[]> {
       const result = await getPool().query(
         `SELECT id, status, zapper_key_label, total_entities, entities_completed, entities_failed,

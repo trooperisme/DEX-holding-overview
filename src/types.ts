@@ -75,6 +75,14 @@ export type ZapperTokenBalance = {
   moniMomentumRank: number | null;
 };
 
+export type MoniScoreData = {
+  moniScore: number;
+  moniLevel: number;
+  moniLevelName: string;
+  moniMomentumScorePct: number | null;
+  moniMomentumRank: number | null;
+};
+
 export type RawHoldingRecord = {
   snapshotId: number;
   entityId: number;
