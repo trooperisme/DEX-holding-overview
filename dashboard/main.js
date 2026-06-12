@@ -31,6 +31,7 @@ const state = {
   selectedSnapshotId: null,
   rows: [],
   openTokenKey: null,
+  activeDrilldownTab: "holders",
   holders: new Map(),
   scoreHistory: new Map(),
   holderErrors: new Map(),
@@ -105,6 +106,7 @@ function parseMarketCapFilterInput() {
 
 function clearOpenRows() {
   state.openTokenKey = null;
+  state.activeDrilldownTab = "holders";
   state.holders.clear();
   state.scoreHistory.clear();
   state.holderErrors.clear();
@@ -777,53 +779,98 @@ function buildScoreTrendPanel(tokenKey) {
   `;
 }
 
-function buildDrilldownRows(tokenKey) {
+function buildDrilldownSummary(tokenKey) {
+  const points = state.scoreHistory.get(tokenKey);
+  if (!points?.length) return "";
+
+  const latest = points.at(-1);
+  const previous = points.at(-2);
+  const deltaPct = getScoreDeltaPct(previous, latest);
+  const deltaClass = Number(deltaPct) > 0 ? "is-positive" : Number(deltaPct) < 0 ? "is-negative" : "";
+
+  return `
+    <div class="drilldown-summary">
+      <span>${escapeHtml(fmtScore(latest.score))}</span>
+      <strong class="${deltaClass}">${escapeHtml(fmtDeltaPct(deltaPct))}</strong>
+    </div>
+  `;
+}
+
+function buildHolderPanel(tokenKey) {
   const rows = state.holders.get(tokenKey);
   const holderError = state.holderErrors.get(tokenKey);
-  const trendPanel = buildScoreTrendPanel(tokenKey);
-  const trendRow = `
+
+  if (!rows) {
+    return `
+      <div class="empty-note ${holderError ? "empty-note--error" : ""}">
+        ${holderError ? `Could not load entity breakdown: ${escapeHtml(holderError)}` : "Loading entity breakdown..."}
+      </div>
+    `;
+  }
+
+  if (!rows.length) {
+    return '<div class="empty-note">No entity holders match the current filters.</div>';
+  }
+
+  return `
+    <div class="holder-list">
+      ${rows
+        .map(
+          (row) => `
+            <div class="holder-list__row">
+              <span class="drilldown-entity">${escapeHtml(row.entityName)}</span>
+              <span class="drilldown-balance">${escapeHtml(fmtUsd(row.balanceUsd))}</span>
+            </div>
+          `,
+        )
+        .join("")}
+    </div>
+  `;
+}
+
+function buildDrilldownRows(tokenKey) {
+  const row = state.rows.find((item) => item.tokenKey === tokenKey);
+  const activeTab = state.activeDrilldownTab === "trend" ? "trend" : "holders";
+  const title = row ? `${row.tokenSymbol} · ${row.tokenName}` : "Token Detail";
+  const body = activeTab === "trend" ? buildScoreTrendPanel(tokenKey) : buildHolderPanel(tokenKey);
+
+  return `
     <tr class="drilldown-row">
       <td colspan="10">
-        <div class="drilldown-panel">
-          ${trendPanel}
+        <div class="drilldown-panel drilldown-detail">
+          <div class="drilldown-detail__header">
+            <div>
+              <h3>${escapeHtml(title)}</h3>
+              <div class="drilldown-tabs" role="tablist" aria-label="Token detail tabs">
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected="${activeTab === "holders"}"
+                  data-drilldown-tab="holders"
+                  class="${activeTab === "holders" ? "is-active" : ""}"
+                >
+                  Holders
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected="${activeTab === "trend"}"
+                  data-drilldown-tab="trend"
+                  class="${activeTab === "trend" ? "is-active" : ""}"
+                >
+                  Score Trend
+                </button>
+              </div>
+            </div>
+            ${buildDrilldownSummary(tokenKey)}
+          </div>
+          <div class="drilldown-detail__body">
+            ${body}
+          </div>
         </div>
       </td>
     </tr>
   `;
-  if (!rows) {
-    return `
-      ${trendRow}
-      <tr class="drilldown-row drilldown-loading-row">
-        <td colspan="10">
-          <div class="drilldown-panel">
-            <div class="empty-note ${holderError ? "empty-note--error" : ""}">
-              ${holderError ? `Could not load entity breakdown: ${escapeHtml(holderError)}` : "Loading entity breakdown..."}
-            </div>
-          </div>
-        </td>
-      </tr>
-    `;
-  }
-
-  return trendRow + rows
-    .map(
-      (row) => `
-        <tr class="drilldown-row drilldown-holder-row">
-          <td></td>
-          <td>
-            <span class="drilldown-entity">${escapeHtml(row.entityName)}</span>
-          </td>
-          <td></td>
-          <td></td>
-          <td></td>
-          <td></td>
-          <td class="drilldown-balance">${escapeHtml(fmtUsd(row.balanceUsd))}</td>
-          <td></td>
-          <td></td>
-        </tr>
-      `,
-    )
-    .join("");
 }
 
 function renderTable() {
@@ -1040,6 +1087,17 @@ document.addEventListener("click", async (event) => {
     return;
   }
 
+  const drilldownTabButton = target.closest("[data-drilldown-tab]");
+  if (drilldownTabButton instanceof HTMLElement) {
+    event.stopPropagation();
+    state.activeDrilldownTab = drilldownTabButton.dataset.drilldownTab === "trend" ? "trend" : "holders";
+    renderTable();
+    if (state.activeDrilldownTab === "trend" && state.openTokenKey) {
+      void loadScoreHistory(state.openTokenKey);
+    }
+    return;
+  }
+
   const copyButton = target.closest("[data-copy-contract]");
   if (copyButton instanceof HTMLElement) {
     event.stopPropagation();
@@ -1102,10 +1160,14 @@ document.addEventListener("click", async (event) => {
   if (row instanceof HTMLElement) {
     const tokenKey = row.dataset.tokenKey;
     if (!tokenKey) return;
-    state.openTokenKey = state.openTokenKey === tokenKey ? null : tokenKey;
+    const nextOpenTokenKey = state.openTokenKey === tokenKey ? null : tokenKey;
+    const tokenChanged = nextOpenTokenKey && nextOpenTokenKey !== state.openTokenKey;
+    state.openTokenKey = nextOpenTokenKey;
+    if (tokenChanged) {
+      state.activeDrilldownTab = "holders";
+    }
     renderTable();
     if (state.openTokenKey === tokenKey) {
-      void loadScoreHistory(tokenKey);
       void loadHolders(tokenKey);
     }
   }

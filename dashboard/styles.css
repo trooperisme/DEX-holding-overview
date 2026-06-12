@@ -610,17 +610,104 @@ th {
   padding: 0 0 18px;
 }
 
-.trend-panel {
+.drilldown-detail {
   display: grid;
-  gap: 16px;
+  gap: 14px;
   min-width: 760px;
   margin: 4px 0 18px;
   padding: 18px;
   border: 1px solid rgba(90, 242, 196, 0.14);
-  border-radius: 20px;
+  border-radius: 16px;
   background:
-    radial-gradient(circle at 6% 0%, rgba(90, 242, 196, 0.08), transparent 28%),
+    radial-gradient(circle at 4% 0%, rgba(90, 242, 196, 0.07), transparent 26%),
     rgba(255, 255, 255, 0.018);
+}
+
+.drilldown-detail__header {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  align-items: start;
+}
+
+.drilldown-detail h3 {
+  margin: 0 0 10px;
+  font-family: "Space Grotesk", sans-serif;
+  font-size: 1rem;
+  letter-spacing: 0;
+}
+
+.drilldown-tabs {
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.drilldown-tabs button {
+  padding: 8px 12px;
+  border: 0;
+  border-radius: 8px;
+  color: var(--muted);
+  background: transparent;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.drilldown-tabs button:hover,
+.drilldown-tabs button.is-active {
+  color: var(--text);
+  background: rgba(90, 242, 196, 0.12);
+}
+
+.drilldown-summary {
+  display: grid;
+  justify-items: end;
+  gap: 4px;
+  font-variant-numeric: tabular-nums;
+}
+
+.drilldown-summary span {
+  font-family: "Space Grotesk", sans-serif;
+  font-size: 1.2rem;
+  font-weight: 700;
+}
+
+.drilldown-summary strong {
+  font-weight: 800;
+}
+
+.drilldown-summary .is-positive {
+  color: var(--accent);
+}
+
+.drilldown-summary .is-negative {
+  color: var(--danger);
+}
+
+.drilldown-detail__body {
+  min-height: 42px;
+}
+
+.holder-list {
+  display: grid;
+  gap: 8px;
+}
+
+.holder-list__row {
+  display: grid;
+  grid-template-columns: minmax(260px, 420px) minmax(160px, 1fr);
+  gap: 18px;
+  align-items: center;
+}
+
+.trend-panel {
+  display: grid;
+  gap: 16px;
 }
 
 .trend-panel__header {
@@ -940,6 +1027,27 @@ th {
 
   .workspace-grid {
     grid-template-columns: 1fr;
+  }
+
+  .drilldown-detail__header {
+    flex-direction: column;
+  }
+
+  .drilldown-tabs {
+    width: 100%;
+  }
+
+  .drilldown-tabs button {
+    flex: 1;
+  }
+
+  .drilldown-summary {
+    justify-items: start;
+  }
+
+  .holder-list__row {
+    grid-template-columns: 1fr;
+    gap: 8px;
   }
 
   .trend-driver-grid {
