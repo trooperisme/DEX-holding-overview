@@ -139,6 +139,47 @@ h2 {
   font-weight: 800;
 }
 
+.solscan-test-shell {
+  max-width: 1280px;
+}
+
+.solscan-test-hero h1 {
+  font-size: clamp(2rem, 4vw, 3.4rem);
+}
+
+.solscan-test-controls {
+  margin-top: 16px;
+}
+
+.solscan-test-grid {
+  margin-top: 16px;
+  display: block;
+}
+
+.solscan-table td {
+  vertical-align: middle;
+}
+
+.solscan-wallet-button {
+  padding: 8px 12px;
+  border-radius: 10px;
+  font-size: 0.86rem;
+}
+
+.mint-code {
+  display: inline-block;
+  max-width: 150px;
+  color: var(--accent);
+  font-family: "Space Grotesk", monospace;
+  font-size: 0.86rem;
+  white-space: nowrap;
+}
+
+.status-banner--error {
+  border-color: rgba(255, 143, 143, 0.32);
+  color: var(--danger);
+}
+
 .action-button--primary {
   background: linear-gradient(135deg, rgba(90, 242, 196, 0.22), rgba(255, 191, 105, 0.18));
   border-color: rgba(90, 242, 196, 0.4);

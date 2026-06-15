@@ -1,11 +1,14 @@
 import path from "node:path";
+import fs from "node:fs";
 import dotenv from "dotenv";
 import express from "express";
 import { createAuthRouter, createPasswordProtection } from "./auth";
 import { createRefreshJobManager } from "./refresh-jobs";
 import { resolveWorkspacePaths } from "./runtime-paths";
+import { withOpportunityScore } from "./scoring";
+import { SOLANA_CHAIN_ID } from "./solscan";
 import { createStorage } from "./storage";
-import { SnapshotRecord, SnapshotStatus } from "./types";
+import { SnapshotRecord, SnapshotStatus, TokenBlacklistRecord, TokenHolderRow, TokenOverviewRow } from "./types";
 
 dotenv.config();
 
@@ -18,6 +21,9 @@ const STALE_REFRESH_AFTER_MS = Number(process.env.REFRESH_STALE_AFTER_MS || (pro
 app.disable("x-powered-by");
 app.set("trust proxy", 1);
 app.use(createAuthRouter());
+app.get("/favicon.ico", (_req, res) => {
+  res.status(204).end();
+});
 app.use(createPasswordProtection());
 app.use(express.json({ limit: "100kb" }));
 app.use("/dashboard", express.static(paths.dashboardDir));
@@ -34,6 +40,10 @@ app.get("/dashboard/", (_req, res) => {
   res.sendFile(path.join(paths.dashboardDir, "index.html"));
 });
 
+app.get("/dashboard/solscan-test", (_req, res) => {
+  res.redirect("/dashboard/solscan-test.html");
+});
+
 app.get("/api/health", (_req, res) => {
   const activeJob = refreshJobs.getCurrent();
   res.json({ ok: true, refreshRunning: Boolean(activeJob?.running), activeJob });
@@ -41,6 +51,167 @@ app.get("/api/health", (_req, res) => {
 
 function sendServerError(res: express.Response, error: unknown): void {
   res.status(500).json({ error: error instanceof Error ? error.message : "Unexpected server error" });
+}
+
+function findLatestSolscanTestFile(): string | null {
+  const tmpDir = path.join(cwd, ".tmp");
+  const dataPublishedFile = path.join(cwd, "data", "raw", "solscan-top-holdings-latest.json");
+
+  const files = fs.existsSync(tmpDir)
+    ? fs
+        .readdirSync(tmpDir)
+        .filter((file) => /^solscan-top-holdings-.+\.json$/.test(file))
+        .map((file) => path.join(tmpDir, file))
+        .sort((left, right) => fs.statSync(right).mtimeMs - fs.statSync(left).mtimeMs)
+    : [];
+
+  return files[0] || (fs.existsSync(dataPublishedFile) ? dataPublishedFile : null);
+}
+
+type SolscanEntityTokenRow = {
+  entityName?: string;
+  resolvedLabel?: string | null;
+  tokenKey?: string;
+  tokenName?: string;
+  tokenSymbol?: string;
+  tokenAddress?: string;
+  balanceUsd?: number;
+  balance?: string;
+  walletCount?: number;
+  wallets?: string[];
+};
+
+type SolscanLatestPayload = {
+  generatedAt?: string;
+  rows?: SolscanEntityTokenRow[];
+};
+
+type SolscanOverviewRow = TokenOverviewRow & {
+  solscanHolders: TokenHolderRow[];
+};
+
+function normalizeSolanaTokenKey(tokenAddress: string): string {
+  return `${SOLANA_CHAIN_ID}:${tokenAddress.toLowerCase()}`;
+}
+
+function isSolanaOverviewRow(row: TokenOverviewRow): boolean {
+  return row.chainId === SOLANA_CHAIN_ID || row.networkName.toLowerCase() === "solana";
+}
+
+function stableNegativeEntityId(value: string): number {
+  let hash = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    hash = (hash * 31 + value.charCodeAt(index)) | 0;
+  }
+  return -Math.max(1, Math.abs(hash));
+}
+
+function readSolscanLatestPayload(): SolscanLatestPayload | null {
+  const latestFile = findLatestSolscanTestFile();
+  if (!latestFile) return null;
+  return JSON.parse(fs.readFileSync(latestFile, "utf8")) as SolscanLatestPayload;
+}
+
+function buildSolscanOverviewRows(options: {
+  payload: SolscanLatestPayload | null;
+  minBalanceUsd: number;
+  minSmwIn: number;
+  maxMarketCapUsd: number | null;
+  blacklist: TokenBlacklistRecord[];
+}): SolscanOverviewRow[] {
+  const rows = Array.isArray(options.payload?.rows) ? options.payload.rows : [];
+  const activeBlacklist = new Set(
+    options.blacklist
+      .filter((item) => item.isActive)
+      .map((item) => item.tokenKey.toLowerCase()),
+  );
+  const byToken = new Map<string, {
+    tokenKey: string;
+    tokenSymbol: string;
+    tokenName: string;
+    tokenAddress: string;
+    holdingsUsd: number;
+    balance: number;
+    holders: Map<string, TokenHolderRow>;
+  }>();
+
+  for (const row of rows) {
+    const tokenAddress = String(row.tokenAddress || "").trim();
+    const balanceUsd = Number(row.balanceUsd || 0);
+    if (!tokenAddress || !Number.isFinite(balanceUsd) || balanceUsd < options.minBalanceUsd) continue;
+
+    const tokenKey = normalizeSolanaTokenKey(tokenAddress);
+    if (activeBlacklist.has(tokenKey.toLowerCase())) continue;
+
+    const group = byToken.get(tokenKey) || {
+      tokenKey,
+      tokenSymbol: String(row.tokenSymbol || "UNKNOWN"),
+      tokenName: String(row.tokenName || row.tokenSymbol || "Unknown token"),
+      tokenAddress,
+      holdingsUsd: 0,
+      balance: 0,
+      holders: new Map<string, TokenHolderRow>(),
+    };
+
+    group.holdingsUsd += balanceUsd;
+    const balance = Number(row.balance || 0);
+    if (Number.isFinite(balance)) group.balance += balance;
+
+    const entityName = String(row.entityName || row.resolvedLabel || "Unknown Entity");
+    const holder = group.holders.get(entityName) || {
+      entityId: stableNegativeEntityId(entityName),
+      entityName,
+      resolvedLabel: row.resolvedLabel ?? null,
+      balanceUsd: 0,
+      networkName: "Solana",
+      tokenSymbol: group.tokenSymbol,
+      tokenName: group.tokenName,
+    };
+    holder.balanceUsd += balanceUsd;
+    group.holders.set(entityName, holder);
+    byToken.set(tokenKey, group);
+  }
+
+  return Array.from(byToken.values())
+    .map((group) => {
+      const holders = Array.from(group.holders.values())
+        .filter((holder) => holder.balanceUsd >= options.minBalanceUsd)
+        .sort((left, right) => right.balanceUsd - left.balanceUsd || left.entityName.localeCompare(right.entityName));
+
+      const row = withOpportunityScore({
+        tokenKey: group.tokenKey,
+        tokenSymbol: group.tokenSymbol,
+        tokenName: group.tokenName,
+        networkName: "Solana",
+        chainId: SOLANA_CHAIN_ID,
+        tokenAddress: group.tokenAddress,
+        holdingsUsd: Math.round(group.holdingsUsd * 100) / 100,
+        smwIn: holders.length,
+        marketCap: null,
+        tokenAgeHours: null,
+        moniScore: null,
+        moniLevel: null,
+        moniLevelName: null,
+        moniMomentumScorePct: null,
+        moniMomentumRank: null,
+        volume24h: null,
+        txns24h: null,
+      });
+
+      return { ...row, solscanHolders: holders };
+    })
+    .filter((row) => row.smwIn >= options.minSmwIn)
+    .filter((row) => options.maxMarketCapUsd == null || row.marketCap == null || row.marketCap < options.maxMarketCapUsd)
+    .sort((left, right) => right.score - left.score || right.holdingsUsd - left.holdingsUsd);
+}
+
+function getSolscanRowsByTokenKey(rows: SolscanOverviewRow[]): Map<string, SolscanOverviewRow> {
+  return new Map(rows.map((row) => [row.tokenKey, row]));
+}
+
+function stripSolscanHolders(row: TokenOverviewRow | SolscanOverviewRow): TokenOverviewRow {
+  const { solscanHolders: _solscanHolders, ...overviewRow } = row as SolscanOverviewRow;
+  return overviewRow;
 }
 
 function isStaleRunningSnapshot(snapshot: SnapshotRecord): boolean {
@@ -144,6 +315,26 @@ app.get("/api/snapshots", async (_req, res) => {
   }
 });
 
+app.get("/api/solscan-test/latest", async (_req, res) => {
+  try {
+    const latestFile = findLatestSolscanTestFile();
+    if (!latestFile) {
+      res.status(404).json({
+        error: "No Solscan test output found. Run npm run solscan:top-holdings first.",
+      });
+      return;
+    }
+
+    const payload = JSON.parse(fs.readFileSync(latestFile, "utf8")) as Record<string, unknown>;
+    res.json({
+      file: path.basename(latestFile),
+      ...payload,
+    });
+  } catch (error) {
+    sendServerError(res, error);
+  }
+});
+
 app.get("/api/overview", async (req, res) => {
   const snapshotId = Number(req.query.snapshotId || 0);
   const minBalanceUsd = Number(req.query.minBalanceUsd || 111);
@@ -158,8 +349,22 @@ app.get("/api/overview", async (req, res) => {
 
   const storage = createStorage(cwd);
   try {
+    const zapperRows = await storage.getOverview(snapshotId, minBalanceUsd, minSmwIn, minLiquidityUsd, maxMarketCapUsd);
+    const solscanRows = buildSolscanOverviewRows({
+      payload: readSolscanLatestPayload(),
+      minBalanceUsd,
+      minSmwIn,
+      maxMarketCapUsd,
+      blacklist: await storage.getBlacklist(),
+    });
+    const rows = solscanRows.length
+      ? [...zapperRows.filter((row) => !isSolanaOverviewRow(row)), ...solscanRows]
+      : zapperRows;
+
     res.json({
-      rows: await storage.getOverview(snapshotId, minBalanceUsd, minSmwIn, minLiquidityUsd, maxMarketCapUsd),
+      rows: rows
+        .sort((left, right) => right.score - left.score || right.holdingsUsd - left.holdingsUsd)
+        .map(stripSolscanHolders),
     });
   } catch (error) {
     sendServerError(res, error);
@@ -179,6 +384,19 @@ app.get("/api/token-holders", async (req, res) => {
 
   const storage = createStorage(cwd);
   try {
+    const solscanRows = buildSolscanOverviewRows({
+      payload: readSolscanLatestPayload(),
+      minBalanceUsd,
+      minSmwIn: 1,
+      maxMarketCapUsd: null,
+      blacklist: await storage.getBlacklist(),
+    });
+    const solscanRow = getSolscanRowsByTokenKey(solscanRows).get(tokenKey);
+    if (solscanRow) {
+      res.json({ rows: solscanRow.solscanHolders });
+      return;
+    }
+
     res.json({
       rows: await storage.getTokenHolders(snapshotId, tokenKey, minBalanceUsd),
     });

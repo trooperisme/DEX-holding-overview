@@ -17,9 +17,10 @@ export function resolveWorkspacePaths(cwd: string) {
   const rawDir = path.join(dataRoot, "raw");
   const dbDir = path.join(dataRoot, "db");
   const publicDashboardDir = path.join(cwd, "public", "dashboard");
-  const dashboardDir = fs.existsSync(publicDashboardDir)
+  const sourceDashboardDir = path.join(cwd, "dashboard");
+  const dashboardDir = process.env.VERCEL && fs.existsSync(publicDashboardDir)
     ? publicDashboardDir
-    : path.join(cwd, "dashboard");
+    : sourceDashboardDir;
   const dbFile = path.join(dbDir, "dex-holding-overview.db");
   const entitiesCsv =
     process.env.TRADER_ENTITIES_CSV && process.env.TRADER_ENTITIES_CSV.trim() && !process.env.VERCEL

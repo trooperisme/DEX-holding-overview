@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Solscan Local Test Table</title>
+    <link rel="stylesheet" href="/dashboard/styles.css" />
+  </head>
+  <body>
+    <main class="app-shell solscan-test-shell">
+      <section class="hero-panel solscan-test-hero">
+        <div class="hero-copy">
+          <p class="eyebrow">Local Solscan Epoch</p>
+          <h1>Top Holdings Test</h1>
+          <p class="hero-meta" id="solscan-meta">
+            Reads the latest local Firecrawl/Solscan output from .tmp.
+          </p>
+        </div>
+
+        <div class="hero-actions">
+          <a class="action-button" href="/dashboard/">Main Dashboard</a>
+          <button class="action-button action-button--primary" id="reload-button" type="button">
+            Reload Latest
+          </button>
+        </div>
+      </section>
+
+      <section class="control-panel solscan-test-controls">
+        <div class="summary-strip">
+          <span class="pill" id="summary-generated">No file</span>
+          <span class="pill" id="summary-entities">0 entities</span>
+          <span class="pill" id="summary-wallets">0 wallets</span>
+          <span class="pill" id="summary-duplicates">0 duplicates collapsed</span>
+        </div>
+        <div class="control-block control-block--wide">
+          <label class="field-label" for="search-input">Search</label>
+          <input
+            id="search-input"
+            type="search"
+            autocomplete="off"
+            spellcheck="false"
+            placeholder="Filter entity, ticker, token name, or mint"
+          />
+        </div>
+      </section>
+
+      <section class="workspace-grid solscan-test-grid">
+        <section class="table-panel">
+          <div class="table-topline">
+            <div>
+              <h2>Solscan Token Overview</h2>
+              <p id="solscan-subtitle">
+                Token-level rows grouped by Solana mint. Click a token to view entity holders.
+              </p>
+            </div>
+            <div class="table-status" id="table-status">0 rows</div>
+          </div>
+
+          <div class="status-banner" id="status-banner" hidden></div>
+
+          <div class="table-wrap">
+            <table class="signals-table solscan-table">
+              <thead>
+                <tr>
+                  <th>Ticker</th>
+                  <th>Token Name</th>
+                  <th>Market Cap</th>
+                  <th>Chain</th>
+                  <th>Token Age</th>
+                  <th>Holdings</th>
+                  <th>SMW In</th>
+                  <th>Mint</th>
+                </tr>
+              </thead>
+              <tbody id="table-body"></tbody>
+            </table>
+          </div>
+        </section>
+      </section>
+    </main>
+
+    <script src="/dashboard/solscan-test.js" defer></script>
+  </body>
+</html>
