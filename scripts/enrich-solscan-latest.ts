@@ -77,6 +77,11 @@ async function enrichMoniScores(options: {
           firecrawlApiKey,
           candidate.twitterHandle,
           candidate.row.tokenName,
+          {
+            tokenSymbol: candidate.row.tokenSymbol,
+            includeTokenFallbacks: true,
+            timeoutMs: Math.max(1000, Number(process.env.MONI_SCRAPE_TIMEOUT_MS || 8000)),
+          },
         );
         if (!moni) continue;
 

@@ -4,15 +4,43 @@ export function buildMoniUrl(twitterHandle: string): string {
   return `https://discover.getmoni.io/${encodeURIComponent(twitterHandle)}`;
 }
 
+type MoniCandidateOptions = {
+  tokenSymbol?: string | null;
+  includeTokenFallbacks?: boolean;
+};
+
+type MoniFetchOptions = MoniCandidateOptions & {
+  signal?: AbortSignal;
+  timeoutMs?: number;
+};
+
 function alphanumeric(value: string): string {
   return value.replace(/[^a-z0-9]/gi, "");
 }
 
-export function buildMoniHandleCandidates(twitterHandle: string, tokenName: string): string[] {
+function addCandidate(candidates: string[], value: string | null | undefined): void {
+  const candidate = String(value || "").trim().replace(/^@/, "");
+  if (!candidate) return;
+  candidates.push(candidate);
+}
+
+function normalizeFetchOptions(optionsOrSignal?: MoniFetchOptions | AbortSignal): MoniFetchOptions {
+  if (!optionsOrSignal) return {};
+  if ("aborted" in optionsOrSignal) return { signal: optionsOrSignal };
+  return optionsOrSignal;
+}
+
+export function buildMoniHandleCandidates(
+  twitterHandle: string,
+  tokenName: string,
+  options: MoniCandidateOptions = {},
+): string[] {
   const handle = twitterHandle.trim();
   if (!handle) return [];
 
-  const candidates = [handle];
+  const candidates: string[] = [];
+  addCandidate(candidates, handle);
+
   const compactName = alphanumeric(tokenName);
   const compactHandle = alphanumeric(handle);
   const lowerName = compactName.toLowerCase();
@@ -21,6 +49,14 @@ export function buildMoniHandleCandidates(twitterHandle: string, tokenName: stri
   if (compactName && lowerHandle.startsWith(lowerName) && handle === handle.toLowerCase()) {
     const suffix = compactHandle.slice(compactName.length);
     if (suffix) candidates.push(`${compactName}${suffix.toUpperCase()}`);
+  }
+
+  if (options.includeTokenFallbacks) {
+    const compactSymbol = alphanumeric(String(options.tokenSymbol || ""));
+    addCandidate(candidates, compactSymbol);
+    addCandidate(candidates, compactSymbol.toLowerCase());
+    addCandidate(candidates, compactName);
+    addCandidate(candidates, compactName.toLowerCase());
   }
 
   return Array.from(new Set(candidates));
@@ -113,12 +149,24 @@ export async function fetchMoniScoreDataForToken(
   firecrawlApiKey: string,
   twitterHandle: string,
   tokenName: string,
-  signal?: AbortSignal,
+  optionsOrSignal?: MoniFetchOptions | AbortSignal,
 ): Promise<MoniScoreData | null> {
-  for (const handle of buildMoniHandleCandidates(twitterHandle, tokenName)) {
+  const options = normalizeFetchOptions(optionsOrSignal);
+  for (const handle of buildMoniHandleCandidates(twitterHandle, tokenName, options)) {
     for (let attempt = 0; attempt < 2; attempt += 1) {
-      const score = await fetchMoniScoreData(firecrawlApiKey, handle, signal);
-      if (score) return score;
+      const controller = options.timeoutMs ? new AbortController() : null;
+      const timeout = controller
+        ? setTimeout(() => controller.abort(), options.timeoutMs)
+        : null;
+      const relayAbort = () => controller?.abort();
+      options.signal?.addEventListener("abort", relayAbort, { once: true });
+      try {
+        const score = await fetchMoniScoreData(firecrawlApiKey, handle, controller?.signal || options.signal);
+        if (score) return score;
+      } finally {
+        if (timeout) clearTimeout(timeout);
+        options.signal?.removeEventListener("abort", relayAbort);
+      }
     }
   }
 

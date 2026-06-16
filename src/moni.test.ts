@@ -11,6 +11,16 @@ test("buildMoniHandleCandidates adds case-sensitive Moni fallback slugs", () => 
   assert.deepEqual(buildMoniHandleCandidates("rei_labs", "Unit 00 - Rei"), ["rei_labs"]);
 });
 
+test("buildMoniHandleCandidates can add token symbol and name fallback slugs", () => {
+  assert.deepEqual(
+    buildMoniHandleCandidates("pumpfun", "Pump", {
+      tokenSymbol: "PUMP",
+      includeTokenFallbacks: true,
+    }),
+    ["pumpfun", "PumpFUN", "PUMP", "pump", "Pump"],
+  );
+});
+
 test("parseMoniMarkdown extracts score, level, and momentum data", () => {
   const parsed = parseMoniMarkdown(`
 Moni Score

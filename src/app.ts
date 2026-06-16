@@ -207,6 +207,11 @@ async function enrichSolscanMoniScores(dataByTokenKey: Map<string, SolscanEnrich
           firecrawlApiKey,
           item.data.twitterHandle || "",
           item.row.tokenName,
+          {
+            tokenSymbol: item.row.tokenSymbol,
+            includeTokenFallbacks: true,
+            timeoutMs: Math.max(1000, Number(process.env.MONI_SCRAPE_TIMEOUT_MS || 8000)),
+          },
         );
         dataByTokenKey.set(item.row.tokenKey, applyMoniScore(item.data, moniData));
       } catch (_error) {

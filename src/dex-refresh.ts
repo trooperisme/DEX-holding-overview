@@ -238,7 +238,12 @@ async function enrichSnapshotMoniScores(options: {
     const handle = candidates[0].twitterHandle;
     const tokenName = candidates[0].tokenName;
     try {
-      const score = await fetchMoniScoreDataForToken(firecrawlApiKey, handle, tokenName, options.signal);
+      const score = await fetchMoniScoreDataForToken(firecrawlApiKey, handle, tokenName, {
+        signal: options.signal,
+        tokenSymbol: candidates[0].tokenSymbol,
+        includeTokenFallbacks: true,
+        timeoutMs: Math.max(1000, Number(process.env.MONI_SCRAPE_TIMEOUT_MS || 8000)),
+      });
       if (!score) {
         await reusePriorMoniScores(candidates);
         return;
