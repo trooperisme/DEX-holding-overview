@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildMoniHandleCandidates, buildMoniUrl, fetchMoniScoreDataForToken, parseMoniMarkdown } from "./moni";
+import { buildMoniHandleCandidates, buildMoniUrl, fetchMoniScoreDataForToken, getMoniLookupTimeoutMs, parseMoniMarkdown } from "./moni";
 
 test("buildMoniUrl builds the discover URL from a Twitter handle", () => {
   assert.equal(buildMoniUrl("GeniusTerminal"), "https://discover.getmoni.io/GeniusTerminal");
@@ -83,6 +83,12 @@ Level: 3. Developing
 
 test("parseMoniMarkdown returns null when the score block is missing", () => {
   assert.equal(parseMoniMarkdown("No project data here"), null);
+});
+
+test("getMoniLookupTimeoutMs never allows a timeout shorter than the render wait floor", () => {
+  assert.equal(getMoniLookupTimeoutMs(), 17000);
+  assert.equal(getMoniLookupTimeoutMs(8000), 17000);
+  assert.equal(getMoniLookupTimeoutMs(30000), 30000);
 });
 
 test("fetchMoniScoreDataForToken reports internal timeouts as regular errors", async () => {

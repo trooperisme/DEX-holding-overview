@@ -4,7 +4,7 @@ import {
   toDexScreenerChainId,
 } from "./dexscreener";
 import { loadImportedEntities, maskApiKey, toTokenKey } from "./entities";
-import { fetchMoniScoreDataForToken } from "./moni";
+import { fetchMoniScoreDataForToken, getMoniLookupTimeoutMs } from "./moni";
 import { resolveWorkspacePaths } from "./runtime-paths";
 import { createStorage } from "./storage";
 import { fetchZapperTokenBalances } from "./zapper";
@@ -242,7 +242,7 @@ async function enrichSnapshotMoniScores(options: {
         signal: options.signal,
         tokenSymbol: candidates[0].tokenSymbol,
         includeTokenFallbacks: true,
-        timeoutMs: Math.max(1000, Number(process.env.MONI_SCRAPE_TIMEOUT_MS || 8000)),
+        timeoutMs: getMoniLookupTimeoutMs(process.env.MONI_SCRAPE_TIMEOUT_MS),
       });
       if (!score) {
         await reusePriorMoniScores(candidates);
@@ -263,7 +263,7 @@ async function enrichSnapshotMoniScores(options: {
         options.callbacks,
         reusedForGroup > 0 ? "info" : "warning",
         reusedForGroup > 0
-          ? `Moni Score lookup failed for @${handle}; reused prior score for ${reusedForGroup}/${candidates.length} token(s): ${message}`
+          ? `Moni Score refresh reused prior score for ${reusedForGroup}/${candidates.length} token(s) after @${handle}: ${message}`
           : `Moni Score lookup skipped for @${handle}: ${message}`,
       );
     }

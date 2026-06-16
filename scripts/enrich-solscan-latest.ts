@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import dotenv from "dotenv";
 import { fetchDexScreenerMarketData } from "../src/dexscreener";
-import { fetchMoniScoreDataForToken } from "../src/moni";
+import { fetchMoniScoreDataForToken, getMoniLookupTimeoutMs } from "../src/moni";
 import { SOLANA_CHAIN_ID } from "../src/solscan";
 
 dotenv.config();
@@ -80,7 +80,7 @@ async function enrichMoniScores(options: {
           {
             tokenSymbol: candidate.row.tokenSymbol,
             includeTokenFallbacks: true,
-            timeoutMs: Math.max(1000, Number(process.env.MONI_SCRAPE_TIMEOUT_MS || 8000)),
+            timeoutMs: getMoniLookupTimeoutMs(process.env.MONI_SCRAPE_TIMEOUT_MS),
           },
         );
         if (!moni) continue;

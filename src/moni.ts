@@ -3,9 +3,18 @@ import { MoniScoreData } from "./types";
 const MONI_RENDER_WAIT_MS = Math.max(0, Number(process.env.MONI_RENDER_WAIT_MS || 12000));
 const MONI_RENDER_TIMEOUT_MS = Math.max(1000, Number(process.env.MONI_RENDER_TIMEOUT_MS || 120000));
 const MONI_SCORE_SELECTOR = '[class*="scoreModule_scoreBlockMoni"]';
+const MONI_LOOKUP_TIMEOUT_FLOOR_MS = Math.min(MONI_RENDER_TIMEOUT_MS, MONI_RENDER_WAIT_MS + 5000);
 
 export function buildMoniUrl(twitterHandle: string): string {
   return `https://discover.getmoni.io/${encodeURIComponent(twitterHandle)}`;
+}
+
+export function getMoniLookupTimeoutMs(configuredTimeoutMs?: number | string | null): number {
+  const configured = Number(configuredTimeoutMs);
+  if (Number.isFinite(configured) && configured > 0) {
+    return Math.max(MONI_LOOKUP_TIMEOUT_FLOOR_MS, Math.trunc(configured));
+  }
+  return MONI_LOOKUP_TIMEOUT_FLOOR_MS;
 }
 
 type MoniCandidateOptions = {

@@ -4,7 +4,7 @@ import dotenv from "dotenv";
 import express from "express";
 import { createAuthRouter, createPasswordProtection } from "./auth";
 import { fetchDexScreenerMarketData } from "./dexscreener";
-import { fetchMoniScoreDataForToken } from "./moni";
+import { fetchMoniScoreDataForToken, getMoniLookupTimeoutMs } from "./moni";
 import { createRefreshJobManager } from "./refresh-jobs";
 import { resolveWorkspacePaths } from "./runtime-paths";
 import { withOpportunityScore } from "./scoring";
@@ -210,7 +210,7 @@ async function enrichSolscanMoniScores(dataByTokenKey: Map<string, SolscanEnrich
           {
             tokenSymbol: item.row.tokenSymbol,
             includeTokenFallbacks: true,
-            timeoutMs: Math.max(1000, Number(process.env.MONI_SCRAPE_TIMEOUT_MS || 8000)),
+            timeoutMs: getMoniLookupTimeoutMs(process.env.MONI_SCRAPE_TIMEOUT_MS),
           },
         );
         dataByTokenKey.set(item.row.tokenKey, applyMoniScore(item.data, moniData));
