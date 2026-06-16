@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildMoniHandleCandidates, buildMoniUrl, parseMoniMarkdown } from "./moni";
+import { buildMoniHandleCandidates, buildMoniUrl, fetchMoniScoreDataForToken, parseMoniMarkdown } from "./moni";
 
 test("buildMoniUrl builds the discover URL from a Twitter handle", () => {
   assert.equal(buildMoniUrl("GeniusTerminal"), "https://discover.getmoni.io/GeniusTerminal");
@@ -83,4 +83,26 @@ Level: 3. Developing
 
 test("parseMoniMarkdown returns null when the score block is missing", () => {
   assert.equal(parseMoniMarkdown("No project data here"), null);
+});
+
+test("fetchMoniScoreDataForToken reports internal timeouts as regular errors", async () => {
+  const originalFetch = global.fetch;
+  try {
+    global.fetch = ((_: string | URL | Request, init?: RequestInit) =>
+      new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => {
+          reject(new DOMException("This operation was aborted", "AbortError"));
+        });
+      })) as unknown as typeof fetch;
+
+    await assert.rejects(
+      () =>
+        fetchMoniScoreDataForToken("test-key", "pumpfun", "Pump", {
+          timeoutMs: 5,
+        }),
+      /Moni scrape timed out for @pumpfun/,
+    );
+  } finally {
+    global.fetch = originalFetch;
+  }
 });

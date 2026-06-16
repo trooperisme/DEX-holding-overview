@@ -488,24 +488,79 @@ function createSqliteStorage(cwd: string): StorageAdapter {
               COUNT(DISTINCT rh.entity_id) as smwIn,
               MAX(rh.market_cap) as marketCap,
               MAX(rh.token_age_hours) as tokenAgeHours,
-              MAX(rh.moni_score) as moniScore,
-              MAX(rh.moni_level) as moniLevel,
-              MAX(rh.moni_level_name) as moniLevelName,
-              MAX(rh.moni_momentum_score_pct) as moniMomentumScorePct,
-              MAX(rh.moni_momentum_rank) as moniMomentumRank,
+              COALESCE(
+                MAX(rh.moni_score),
+                (
+                  SELECT prev.moni_score
+                  FROM raw_holdings prev
+                  WHERE prev.token_key = rh.token_key
+                    AND prev.snapshot_id < @snapshotId
+                    AND prev.moni_score IS NOT NULL
+                  ORDER BY prev.snapshot_id DESC
+                  LIMIT 1
+                )
+              ) as moniScore,
+              COALESCE(
+                MAX(rh.moni_level),
+                (
+                  SELECT prev.moni_level
+                  FROM raw_holdings prev
+                  WHERE prev.token_key = rh.token_key
+                    AND prev.snapshot_id < @snapshotId
+                    AND prev.moni_score IS NOT NULL
+                  ORDER BY prev.snapshot_id DESC
+                  LIMIT 1
+                )
+              ) as moniLevel,
+              COALESCE(
+                MAX(rh.moni_level_name),
+                (
+                  SELECT prev.moni_level_name
+                  FROM raw_holdings prev
+                  WHERE prev.token_key = rh.token_key
+                    AND prev.snapshot_id < @snapshotId
+                    AND prev.moni_score IS NOT NULL
+                  ORDER BY prev.snapshot_id DESC
+                  LIMIT 1
+                )
+              ) as moniLevelName,
+              COALESCE(
+                MAX(rh.moni_momentum_score_pct),
+                (
+                  SELECT prev.moni_momentum_score_pct
+                  FROM raw_holdings prev
+                  WHERE prev.token_key = rh.token_key
+                    AND prev.snapshot_id < @snapshotId
+                    AND prev.moni_score IS NOT NULL
+                  ORDER BY prev.snapshot_id DESC
+                  LIMIT 1
+                )
+              ) as moniMomentumScorePct,
+              COALESCE(
+                MAX(rh.moni_momentum_rank),
+                (
+                  SELECT prev.moni_momentum_rank
+                  FROM raw_holdings prev
+                  WHERE prev.token_key = rh.token_key
+                    AND prev.snapshot_id < @snapshotId
+                    AND prev.moni_score IS NOT NULL
+                  ORDER BY prev.snapshot_id DESC
+                  LIMIT 1
+                )
+              ) as moniMomentumRank,
               MAX(rh.volume_24h) as volume24h,
               MAX(rh.txns_24h) as txns24h
            FROM raw_holdings rh
            LEFT JOIN token_blacklist bl
              ON bl.token_key = rh.token_key AND bl.is_active = 1
-           WHERE rh.snapshot_id = ?
-             AND rh.balance_usd >= ?
+           WHERE rh.snapshot_id = @snapshotId
+             AND rh.balance_usd >= @minBalanceUsd
              AND bl.id IS NULL
            GROUP BY rh.token_key
-           HAVING COUNT(DISTINCT rh.entity_id) >= ?
+           HAVING COUNT(DISTINCT rh.entity_id) >= @minSmwIn
              AND (
                MAX(CASE WHEN rh.token_address IS NOT NULL THEN rh.liquidity_usd END) IS NULL
-               OR MAX(CASE WHEN rh.token_address IS NOT NULL THEN rh.liquidity_usd END) >= ?
+               OR MAX(CASE WHEN rh.token_address IS NOT NULL THEN rh.liquidity_usd END) >= @minLiquidityUsd
              )
              AND (
                MAX(CASE WHEN rh.token_address IS NOT NULL THEN rh.volume_24h END) IS NULL
@@ -516,13 +571,19 @@ function createSqliteStorage(cwd: string): StorageAdapter {
                OR MAX(CASE WHEN rh.token_address IS NOT NULL THEN rh.txns_24h END) >= 11
              )
              AND (
-               ? IS NULL
+               @maxMarketCapUsd IS NULL
                OR MAX(rh.market_cap) IS NULL
-               OR MAX(rh.market_cap) < ?
+               OR MAX(rh.market_cap) < @maxMarketCapUsd
              )
            ORDER BY smwIn DESC, holdingsUsd DESC, tokenSymbol COLLATE NOCASE ASC`,
         )
-        .all(snapshotId, minBalanceUsd, minSmwIn, minLiquidityUsd, maxMarketCapUsd, maxMarketCapUsd) as Array<
+        .all({
+          snapshotId,
+          minBalanceUsd,
+          minSmwIn,
+          minLiquidityUsd,
+          maxMarketCapUsd,
+        }) as Array<
         Omit<TokenOverviewRow, "score">
       >;
       return rows.map(withOpportunityScore);

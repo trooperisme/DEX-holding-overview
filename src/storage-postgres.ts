@@ -480,11 +480,66 @@ export function createPostgresStorage(): StorageAdapter {
             COUNT(DISTINCT rh.entity_id) as smw_in,
             MAX(rh.market_cap) as market_cap,
             MAX(rh.token_age_hours) as token_age_hours,
-            MAX(rh.moni_score) as moni_score,
-            MAX(rh.moni_level) as moni_level,
-            MAX(rh.moni_level_name) as moni_level_name,
-            MAX(rh.moni_momentum_score_pct) as moni_momentum_score_pct,
-            MAX(rh.moni_momentum_rank) as moni_momentum_rank,
+            COALESCE(
+              MAX(rh.moni_score),
+              (
+                SELECT prev.moni_score
+                FROM ${table("raw_holdings")} prev
+                WHERE prev.token_key = rh.token_key
+                  AND prev.snapshot_id < $1
+                  AND prev.moni_score IS NOT NULL
+                ORDER BY prev.snapshot_id DESC
+                LIMIT 1
+              )
+            ) as moni_score,
+            COALESCE(
+              MAX(rh.moni_level),
+              (
+                SELECT prev.moni_level
+                FROM ${table("raw_holdings")} prev
+                WHERE prev.token_key = rh.token_key
+                  AND prev.snapshot_id < $1
+                  AND prev.moni_score IS NOT NULL
+                ORDER BY prev.snapshot_id DESC
+                LIMIT 1
+              )
+            ) as moni_level,
+            COALESCE(
+              MAX(rh.moni_level_name),
+              (
+                SELECT prev.moni_level_name
+                FROM ${table("raw_holdings")} prev
+                WHERE prev.token_key = rh.token_key
+                  AND prev.snapshot_id < $1
+                  AND prev.moni_score IS NOT NULL
+                ORDER BY prev.snapshot_id DESC
+                LIMIT 1
+              )
+            ) as moni_level_name,
+            COALESCE(
+              MAX(rh.moni_momentum_score_pct),
+              (
+                SELECT prev.moni_momentum_score_pct
+                FROM ${table("raw_holdings")} prev
+                WHERE prev.token_key = rh.token_key
+                  AND prev.snapshot_id < $1
+                  AND prev.moni_score IS NOT NULL
+                ORDER BY prev.snapshot_id DESC
+                LIMIT 1
+              )
+            ) as moni_momentum_score_pct,
+            COALESCE(
+              MAX(rh.moni_momentum_rank),
+              (
+                SELECT prev.moni_momentum_rank
+                FROM ${table("raw_holdings")} prev
+                WHERE prev.token_key = rh.token_key
+                  AND prev.snapshot_id < $1
+                  AND prev.moni_score IS NOT NULL
+                ORDER BY prev.snapshot_id DESC
+                LIMIT 1
+              )
+            ) as moni_momentum_rank,
             MAX(rh.volume_24h) as volume_24h,
             MAX(rh.txns_24h) as txns_24h
          FROM ${table("raw_holdings")} rh

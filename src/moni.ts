@@ -171,14 +171,23 @@ export async function fetchMoniScoreDataForToken(
   for (const handle of buildMoniHandleCandidates(twitterHandle, tokenName, options)) {
     for (let attempt = 0; attempt < 2; attempt += 1) {
       const controller = options.timeoutMs ? new AbortController() : null;
+      let didTimeout = false;
       const timeout = controller
-        ? setTimeout(() => controller.abort(), options.timeoutMs)
+        ? setTimeout(() => {
+            didTimeout = true;
+            controller.abort();
+          }, options.timeoutMs)
         : null;
       const relayAbort = () => controller?.abort();
       options.signal?.addEventListener("abort", relayAbort, { once: true });
       try {
         const score = await fetchMoniScoreData(firecrawlApiKey, handle, controller?.signal || options.signal);
         if (score) return score;
+      } catch (error) {
+        if (didTimeout) {
+          throw new Error(`Moni scrape timed out for @${handle}`);
+        }
+        throw error;
       } finally {
         if (timeout) clearTimeout(timeout);
         options.signal?.removeEventListener("abort", relayAbort);

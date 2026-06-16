@@ -76,3 +76,44 @@ test("getLatestTokenMoniDataBeforeSnapshot returns the prior known Moni score", 
     fs.rmSync(cwd, { recursive: true, force: true });
   }
 });
+
+test("getOverview reuses the latest prior Moni score when the current snapshot is missing it", async () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "dex-storage-test-"));
+  const previousDatabaseUrl = process.env.DATABASE_URL;
+  delete process.env.DATABASE_URL;
+
+  const storage = createStorage(cwd);
+  try {
+    await storage.replaceEntities([
+      {
+        entityName: "tester",
+        fullZapperLink: "https://zapper.xyz/bundle/0xabc?label=tester",
+        resolvedLabel: "tester",
+        linkType: "bundle",
+        walletAddresses: ["0xabc"],
+      },
+    ]);
+    const [entity] = await storage.getEntities();
+
+    const snapshot1 = await storage.createSnapshot(1, null);
+    await storage.insertRawHoldingsForEntity(snapshot1, entity.id, [rawHolding(snapshot1, entity.id, 4102)]);
+
+    const snapshot2 = await storage.createSnapshot(1, null);
+    await storage.insertRawHoldingsForEntity(snapshot2, entity.id, [rawHolding(snapshot2, entity.id, null)]);
+
+    const [overview] = await storage.getOverview(snapshot2, 111, 1, 11111, null);
+    assert.equal(overview?.moniScore, 4102);
+    assert.equal(overview?.moniLevel, 5);
+    assert.equal(overview?.moniLevelName, "Medium");
+    assert.equal(overview?.moniMomentumScorePct, 0);
+    assert.equal(overview?.moniMomentumRank, 1467);
+  } finally {
+    await storage.close();
+    if (previousDatabaseUrl == null) {
+      delete process.env.DATABASE_URL;
+    } else {
+      process.env.DATABASE_URL = previousDatabaseUrl;
+    }
+    fs.rmSync(cwd, { recursive: true, force: true });
+  }
+});
