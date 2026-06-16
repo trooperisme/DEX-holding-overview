@@ -1,5 +1,9 @@
 import { MoniScoreData } from "./types";
 
+const MONI_RENDER_WAIT_MS = Math.max(0, Number(process.env.MONI_RENDER_WAIT_MS || 12000));
+const MONI_RENDER_TIMEOUT_MS = Math.max(1000, Number(process.env.MONI_RENDER_TIMEOUT_MS || 120000));
+const MONI_SCORE_SELECTOR = '[class*="scoreModule_scoreBlockMoni"]';
+
 export function buildMoniUrl(twitterHandle: string): string {
   return `https://discover.getmoni.io/${encodeURIComponent(twitterHandle)}`;
 }
@@ -118,12 +122,24 @@ export async function fetchMoniScoreData(
     body: JSON.stringify({
       url: buildMoniUrl(twitterHandle),
       formats: ["markdown"],
-      onlyMainContent: true,
+      onlyMainContent: false,
       maxAge: 0,
       storeInCache: false,
       proxy: "auto",
       removeBase64Images: true,
       blockAds: true,
+      waitFor: MONI_RENDER_WAIT_MS,
+      timeout: MONI_RENDER_TIMEOUT_MS,
+      actions: [
+        {
+          type: "wait",
+          selector: MONI_SCORE_SELECTOR,
+        },
+        {
+          type: "wait",
+          milliseconds: 1500,
+        },
+      ],
     }),
   });
 
