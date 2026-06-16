@@ -20,7 +20,12 @@
       "walletCount": 1,
       "wallets": [
         "7YzAoBQMDFbMxxGZVBt1YZqARcF9oGkpUMVuMLpbGbGc"
-      ]
+      ],
+      "marketCap": 1364741,
+      "liquidityUsd": 17426.25,
+      "volume24h": 1291.74,
+      "txns24h": 96,
+      "tokenAgeHours": 5363.318879444444
     },
     {
       "entityName": "🛑 CriptoPaul 🤓",
@@ -34,7 +39,12 @@
       "walletCount": 1,
       "wallets": [
         "7YzAoBQMDFbMxxGZVBt1YZqARcF9oGkpUMVuMLpbGbGc"
-      ]
+      ],
+      "marketCap": 3143077,
+      "liquidityUsd": 178758.93,
+      "volume24h": 49035.5,
+      "txns24h": 674,
+      "tokenAgeHours": 4521.841101666667
     },
     {
       "entityName": "0xDQ",
@@ -48,7 +58,12 @@
       "walletCount": 1,
       "wallets": [
         "BCRYxXpJYbtjLZe5ED2qYuhXwxdtinmmz1qXWr9So1oM"
-      ]
+      ],
+      "marketCap": 67799131,
+      "liquidityUsd": 63020.18,
+      "volume24h": 399394.01,
+      "txns24h": 8564,
+      "tokenAgeHours": 5419.108046388889
     },
     {
       "entityName": "AndreiSilver",
@@ -62,7 +77,12 @@
       "walletCount": 1,
       "wallets": [
         "FXBA4QqvkWTajCrApU8MF8h7GjrySZTLoUqYCFkhPDoa"
-      ]
+      ],
+      "marketCap": 819479,
+      "liquidityUsd": 18897.18,
+      "volume24h": 5565.66,
+      "txns24h": 167,
+      "tokenAgeHours": 659.3047130555556
     },
     {
       "entityName": "AndreiSilver",
@@ -76,7 +96,12 @@
       "walletCount": 1,
       "wallets": [
         "FXBA4QqvkWTajCrApU8MF8h7GjrySZTLoUqYCFkhPDoa"
-      ]
+      ],
+      "marketCap": 178441,
+      "liquidityUsd": 45297.77,
+      "volume24h": 73072.34,
+      "txns24h": 448,
+      "tokenAgeHours": 262.07193527777775
     },
     {
       "entityName": "Avocado_Toast",
@@ -90,7 +115,12 @@
       "walletCount": 1,
       "wallets": [
         "x5tMEhAxqpd62VyhYSYVjt4P8Vr7LsP2YyVRc5EtZT3"
-      ]
+      ],
+      "marketCap": 11225483,
+      "liquidityUsd": 22951.4,
+      "volume24h": 2773.6,
+      "txns24h": 447,
+      "tokenAgeHours": 5769.700824166666
     },
     {
       "entityName": "Avocado_Toast",
@@ -104,7 +134,12 @@
       "walletCount": 1,
       "wallets": [
         "CcTMq5wKfCPtXtxb5fscsX55fc6UrksvdT4mpoCAhKkk"
-      ]
+      ],
+      "marketCap": null,
+      "liquidityUsd": null,
+      "volume24h": null,
+      "txns24h": null,
+      "tokenAgeHours": null
     },
     {
       "entityName": "Avocado_Toast",
@@ -118,7 +153,12 @@
       "walletCount": 1,
       "wallets": [
         "CcTMq5wKfCPtXtxb5fscsX55fc6UrksvdT4mpoCAhKkk"
-      ]
+      ],
+      "marketCap": 9653,
+      "liquidityUsd": 13095.44,
+      "volume24h": 159.87,
+      "txns24h": 1,
+      "tokenAgeHours": 11687.112213055556
     },
     {
       "entityName": "Base Specialist | tommy 🌙",
@@ -132,7 +172,12 @@
       "walletCount": 1,
       "wallets": [
         "13VnNpb1DdLyGrVddye1W2WGgNe4iGpr7JqubdSQa4ZU"
-      ]
+      ],
+      "marketCap": 74865003782,
+      "liquidityUsd": 3788385.87,
+      "volume24h": 1128444.33,
+      "txns24h": 2151,
+      "tokenAgeHours": 16077.566935277779
     },
     {
       "entityName": "Base Specialist | tommy 🌙",
@@ -146,7 +191,12 @@
       "walletCount": 1,
       "wallets": [
         "13VnNpb1DdLyGrVddye1W2WGgNe4iGpr7JqubdSQa4ZU"
-      ]
+      ],
+      "marketCap": 1983453,
+      "liquidityUsd": 160881.42,
+      "volume24h": 88094.28,
+      "txns24h": 593,
+      "tokenAgeHours": 3414.641935277778
     },
     {
       "entityName": "Base Specialist | tommy 🌙",
@@ -160,7 +210,12 @@
       "walletCount": 1,
       "wallets": [
         "5F9S59yMtCT7mpRSMFVTFBrJPLSmk1d2NSmcUHr1gMHt"
-      ]
+      ],
+      "marketCap": 67799131,
+      "liquidityUsd": 63020.18,
+      "volume24h": 399394.01,
+      "txns24h": 8564,
+      "tokenAgeHours": 5419.108046388889
     },
     {
       "entityName": "Base Specialist | tommy 🌙",
@@ -174,7 +229,12 @@
       "walletCount": 1,
       "wallets": [
         "13VnNpb1DdLyGrVddye1W2WGgNe4iGpr7JqubdSQa4ZU"
-      ]
+      ],
+      "marketCap": 554805,
+      "liquidityUsd": 96972.99,
+      "volume24h": 78844.94,
+      "txns24h": 535,
+      "tokenAgeHours": 9515.142213055555
     },
     {
       "entityName": "Base Specialist | tommy 🌙",
@@ -188,7 +248,12 @@
       "walletCount": 1,
       "wallets": [
         "13VnNpb1DdLyGrVddye1W2WGgNe4iGpr7JqubdSQa4ZU"
-      ]
+      ],
+      "marketCap": 226271,
+      "liquidityUsd": 41302.58,
+      "volume24h": 35329.45,
+      "txns24h": 433,
+      "tokenAgeHours": 1827.9274908333334
     },
     {
       "entityName": "Base Specialist | tommy 🌙",
@@ -202,7 +267,12 @@
       "walletCount": 1,
       "wallets": [
         "5F9S59yMtCT7mpRSMFVTFBrJPLSmk1d2NSmcUHr1gMHt"
-      ]
+      ],
+      "marketCap": 2119652,
+      "liquidityUsd": 160436.05,
+      "volume24h": 28561.44,
+      "txns24h": 279,
+      "tokenAgeHours": 17114.148601944446
     },
     {
       "entityName": "Base Specialist | tommy 🌙",
@@ -216,7 +286,12 @@
       "walletCount": 1,
       "wallets": [
         "13VnNpb1DdLyGrVddye1W2WGgNe4iGpr7JqubdSQa4ZU"
-      ]
+      ],
+      "marketCap": 240427,
+      "liquidityUsd": 51871.59,
+      "volume24h": 31884.3,
+      "txns24h": 427,
+      "tokenAgeHours": 6798.674990833333
     },
     {
       "entityName": "Blockchain Brah",
@@ -230,7 +305,12 @@
       "walletCount": 1,
       "wallets": [
         "EinunBvYJT46EWsTVMswMqpZyJJULr9ocznqTM8k14PC"
-      ]
+      ],
+      "marketCap": 186497397348,
+      "liquidityUsd": 26641.86,
+      "volume24h": 12312.44,
+      "txns24h": 284,
+      "tokenAgeHours": 18373.60304638889
     },
     {
       "entityName": "Blockchain Brah",
@@ -244,7 +324,12 @@
       "walletCount": 1,
       "wallets": [
         "EinunBvYJT46EWsTVMswMqpZyJJULr9ocznqTM8k14PC"
-      ]
+      ],
+      "marketCap": 74865003782,
+      "liquidityUsd": 3788385.87,
+      "volume24h": 1128444.33,
+      "txns24h": 2151,
+      "tokenAgeHours": 16077.566935277779
     },
     {
       "entityName": "Buyingyourstop",
@@ -258,7 +343,12 @@
       "walletCount": 1,
       "wallets": [
         "CxKFkAu8LngjYmcCjT2siKyAiMrKjbTB96NRXg8jqHH6"
-      ]
+      ],
+      "marketCap": 67799131,
+      "liquidityUsd": 63020.18,
+      "volume24h": 399394.01,
+      "txns24h": 8564,
+      "tokenAgeHours": 5419.108046388889
     },
     {
       "entityName": "Buyingyourstop",
@@ -272,7 +362,12 @@
       "walletCount": 1,
       "wallets": [
         "CxKFkAu8LngjYmcCjT2siKyAiMrKjbTB96NRXg8jqHH6"
-      ]
+      ],
+      "marketCap": 5420043,
+      "liquidityUsd": 235332.39,
+      "volume24h": 353834.82,
+      "txns24h": 3826,
+      "tokenAgeHours": 2139.8916575
     },
     {
       "entityName": "Buyingyourstop",
@@ -286,7 +381,12 @@
       "walletCount": 1,
       "wallets": [
         "CxKFkAu8LngjYmcCjT2siKyAiMrKjbTB96NRXg8jqHH6"
-      ]
+      ],
+      "marketCap": 18044141,
+      "liquidityUsd": 425184.45,
+      "volume24h": 193100.77,
+      "txns24h": 1059,
+      "tokenAgeHours": 6434.8133241666665
     },
     {
       "entityName": "Buyingyourstop",
@@ -300,7 +400,12 @@
       "walletCount": 1,
       "wallets": [
         "CxKFkAu8LngjYmcCjT2siKyAiMrKjbTB96NRXg8jqHH6"
-      ]
+      ],
+      "marketCap": 4298249,
+      "liquidityUsd": 194267.64,
+      "volume24h": 260365.36,
+      "txns24h": 2846,
+      "tokenAgeHours": 4713.113324166667
     },
     {
       "entityName": "Chad + Conviction 🤓 | Curated by Octoshi Dream + Codec",
@@ -315,7 +420,12 @@
       "wallets": [
         "D2sBRutX76resHFPH7GTBw8w46rNAgGkzzUprsaHDMdK",
         "EpUyH8gvPdKeBWSZS44Kn31hmZtxgMA8gM6dog8hhXJT"
-      ]
+      ],
+      "marketCap": 74865003782,
+      "liquidityUsd": 3788385.87,
+      "volume24h": 1128444.33,
+      "txns24h": 2151,
+      "tokenAgeHours": 16077.566935277779
     },
     {
       "entityName": "Chad + Conviction 🤓 | Curated by Octoshi Dream + Codec",
@@ -330,7 +440,12 @@
       "wallets": [
         "D2sBRutX76resHFPH7GTBw8w46rNAgGkzzUprsaHDMdK",
         "EpUyH8gvPdKeBWSZS44Kn31hmZtxgMA8gM6dog8hhXJT"
-      ]
+      ],
+      "marketCap": 3611791,
+      "liquidityUsd": 325764.62,
+      "volume24h": 42497.22,
+      "txns24h": 568,
+      "tokenAgeHours": 12300.447213055555
     },
     {
       "entityName": "Chad + Conviction 🤓 | Curated by Octoshi Dream + Codec",
@@ -345,7 +460,17 @@
       "wallets": [
         "D2sBRutX76resHFPH7GTBw8w46rNAgGkzzUprsaHDMdK",
         "EpUyH8gvPdKeBWSZS44Kn31hmZtxgMA8gM6dog8hhXJT"
-      ]
+      ],
+      "marketCap": 3202380,
+      "liquidityUsd": 313775.9,
+      "volume24h": 107406.51,
+      "txns24h": 536,
+      "tokenAgeHours": 10012.955268611111,
+      "moniScore": 1694,
+      "moniLevel": 4,
+      "moniLevelName": "Established",
+      "moniMomentumScorePct": 0,
+      "moniMomentumRank": 19260
     },
     {
       "entityName": "Chad + Conviction 🤓 | Curated by Octoshi Dream + Codec",
@@ -359,7 +484,12 @@
       "walletCount": 1,
       "wallets": [
         "D2sBRutX76resHFPH7GTBw8w46rNAgGkzzUprsaHDMdK"
-      ]
+      ],
+      "marketCap": 76966817,
+      "liquidityUsd": 5068818.13,
+      "volume24h": 407440.8,
+      "txns24h": 2177,
+      "tokenAgeHours": 14579.463601944444
     },
     {
       "entityName": "Chad + Conviction 🤓 | Curated by Octoshi Dream + Codec",
@@ -374,7 +504,17 @@
       "wallets": [
         "D2sBRutX76resHFPH7GTBw8w46rNAgGkzzUprsaHDMdK",
         "EpUyH8gvPdKeBWSZS44Kn31hmZtxgMA8gM6dog8hhXJT"
-      ]
+      ],
+      "marketCap": 176325,
+      "liquidityUsd": 38915.07,
+      "volume24h": 3279.39,
+      "txns24h": 121,
+      "tokenAgeHours": 9267.3266575,
+      "moniScore": 1792,
+      "moniLevel": 3,
+      "moniLevelName": "Developing",
+      "moniMomentumScorePct": 0,
+      "moniMomentumRank": 37279
     },
     {
       "entityName": "ColbySayHi",
@@ -389,7 +529,12 @@
       "wallets": [
         "EbZ8yV8eG2vRz7FULBX6KAG97EuMyssmtopPLZAwV5uA",
         "7kA5gfafaoBMQ4pJpCfyT5TKbnzG7twbt3WkX5bVcW25"
-      ]
+      ],
+      "marketCap": 74865003782,
+      "liquidityUsd": 3788385.87,
+      "volume24h": 1128444.33,
+      "txns24h": 2151,
+      "tokenAgeHours": 16077.566935277779
     },
     {
       "entityName": "ColbySayHi",
@@ -403,7 +548,12 @@
       "walletCount": 1,
       "wallets": [
         "EbZ8yV8eG2vRz7FULBX6KAG97EuMyssmtopPLZAwV5uA"
-      ]
+      ],
+      "marketCap": 12483681,
+      "liquidityUsd": 375616.89,
+      "volume24h": 1711405.45,
+      "txns24h": 15760,
+      "tokenAgeHours": 585.1372130555555
     },
     {
       "entityName": "ColbySayHi",
@@ -417,7 +567,12 @@
       "walletCount": 1,
       "wallets": [
         "EbZ8yV8eG2vRz7FULBX6KAG97EuMyssmtopPLZAwV5uA"
-      ]
+      ],
+      "marketCap": 188578,
+      "liquidityUsd": 36330.95,
+      "volume24h": 292869.86,
+      "txns24h": 4603,
+      "tokenAgeHours": 166.1316575
     },
     {
       "entityName": "Crypto Andrew",
@@ -431,7 +586,12 @@
       "walletCount": 1,
       "wallets": [
         "A3r2KqUHAuNbJXERLGzkFQsrGzEy9aC5mbK4pdEZCxze"
-      ]
+      ],
+      "marketCap": 74865003782,
+      "liquidityUsd": 3788385.87,
+      "volume24h": 1128444.33,
+      "txns24h": 2151,
+      "tokenAgeHours": 16077.566935277779
     },
     {
       "entityName": "CryptoKaduna",
@@ -445,7 +605,12 @@
       "walletCount": 1,
       "wallets": [
         "ForQYxfhLMv3ieCWQYxMWwACZZTp16rBUe3r8cwRLnB5"
-      ]
+      ],
+      "marketCap": null,
+      "liquidityUsd": null,
+      "volume24h": null,
+      "txns24h": null,
+      "tokenAgeHours": null
     },
     {
       "entityName": "CryptoKaduna",
@@ -459,7 +624,12 @@
       "walletCount": 1,
       "wallets": [
         "ForQYxfhLMv3ieCWQYxMWwACZZTp16rBUe3r8cwRLnB5"
-      ]
+      ],
+      "marketCap": 2083345,
+      "liquidityUsd": 190923.65,
+      "volume24h": 83571.71,
+      "txns24h": 851,
+      "tokenAgeHours": 2959.118046388889
     },
     {
       "entityName": "CryptoKaduna",
@@ -475,7 +645,12 @@
         "BTWdJQ4h9NiQPY11RMn2rQ8E3NZLKqjNPYSACcHu7kmr",
         "ForQYxfhLMv3ieCWQYxMWwACZZTp16rBUe3r8cwRLnB5",
         "5YTWZRFNVJ5ZpfnWNcq8NSUESMwQACAt9Z8U8JphB62r"
-      ]
+      ],
+      "marketCap": 1000099,
+      "liquidityUsd": 101652.88,
+      "volume24h": 83431.75,
+      "txns24h": 797,
+      "tokenAgeHours": 9877.922768611112
     },
     {
       "entityName": "CryptoKaduna",
@@ -489,7 +664,12 @@
       "walletCount": 1,
       "wallets": [
         "BTWdJQ4h9NiQPY11RMn2rQ8E3NZLKqjNPYSACcHu7kmr"
-      ]
+      ],
+      "marketCap": 878895,
+      "liquidityUsd": 118436.9,
+      "volume24h": 36946.41,
+      "txns24h": 439,
+      "tokenAgeHours": 5811.123879722222
     },
     {
       "entityName": "CryptoKaduna",
@@ -503,7 +683,12 @@
       "walletCount": 1,
       "wallets": [
         "39xGf1UKra9jp5EwMCZC1NHdJ7XRyPtjXD1rrjAJpiTF"
-      ]
+      ],
+      "marketCap": 252851,
+      "liquidityUsd": 63893.72,
+      "volume24h": 149640.68,
+      "txns24h": 2042,
+      "tokenAgeHours": 5336.336101944445
     },
     {
       "entityName": "CryptoKaduna",
@@ -517,7 +702,12 @@
       "walletCount": 1,
       "wallets": [
         "ForQYxfhLMv3ieCWQYxMWwACZZTp16rBUe3r8cwRLnB5"
-      ]
+      ],
+      "marketCap": 2119652,
+      "liquidityUsd": 160436.05,
+      "volume24h": 28561.44,
+      "txns24h": 279,
+      "tokenAgeHours": 17114.148601944446
     },
     {
       "entityName": "CryptoKaduna",
@@ -532,7 +722,12 @@
       "wallets": [
         "BTWdJQ4h9NiQPY11RMn2rQ8E3NZLKqjNPYSACcHu7kmr",
         "5YTWZRFNVJ5ZpfnWNcq8NSUESMwQACAt9Z8U8JphB62r"
-      ]
+      ],
+      "marketCap": 46617,
+      "liquidityUsd": 23579.14,
+      "volume24h": 422.65,
+      "txns24h": 7,
+      "tokenAgeHours": 14543.819990833334
     },
     {
       "entityName": "CryptoKaduna",
@@ -546,7 +741,12 @@
       "walletCount": 1,
       "wallets": [
         "BTWdJQ4h9NiQPY11RMn2rQ8E3NZLKqjNPYSACcHu7kmr"
-      ]
+      ],
+      "marketCap": 88212,
+      "liquidityUsd": 53406.59,
+      "volume24h": 89.38,
+      "txns24h": 13,
+      "tokenAgeHours": 14073.067308055555
     },
     {
       "entityName": "CryptoKaduna",
@@ -560,7 +760,12 @@
       "walletCount": 1,
       "wallets": [
         "BTWdJQ4h9NiQPY11RMn2rQ8E3NZLKqjNPYSACcHu7kmr"
-      ]
+      ],
+      "marketCap": 99679,
+      "liquidityUsd": 35273.99,
+      "volume24h": 2413.22,
+      "txns24h": 26,
+      "tokenAgeHours": 12102.693419166666
     },
     {
       "entityName": "CryptoKaduna",
@@ -574,7 +779,12 @@
       "walletCount": 1,
       "wallets": [
         "BTWdJQ4h9NiQPY11RMn2rQ8E3NZLKqjNPYSACcHu7kmr"
-      ]
+      ],
+      "marketCap": 31568,
+      "liquidityUsd": 33485.37,
+      "volume24h": 20.49,
+      "txns24h": 10,
+      "tokenAgeHours": 13177.021196944444
     },
     {
       "entityName": "CryptoKaduna",
@@ -588,7 +798,12 @@
       "walletCount": 1,
       "wallets": [
         "5YTWZRFNVJ5ZpfnWNcq8NSUESMwQACAt9Z8U8JphB62r"
-      ]
+      ],
+      "marketCap": 303105,
+      "liquidityUsd": 60494.38,
+      "volume24h": 97980.46,
+      "txns24h": 1035,
+      "tokenAgeHours": 8243.821474722223
     },
     {
       "entityName": "CryptoKaduna",
@@ -602,7 +817,12 @@
       "walletCount": 1,
       "wallets": [
         "ForQYxfhLMv3ieCWQYxMWwACZZTp16rBUe3r8cwRLnB5"
-      ]
+      ],
+      "marketCap": 71625,
+      "liquidityUsd": 23742.77,
+      "volume24h": 1439.69,
+      "txns24h": 46,
+      "tokenAgeHours": 2707.581474722222
     },
     {
       "entityName": "CryptoKaduna",
@@ -616,7 +836,12 @@
       "walletCount": 1,
       "wallets": [
         "5YTWZRFNVJ5ZpfnWNcq8NSUESMwQACAt9Z8U8JphB62r"
-      ]
+      ],
+      "marketCap": 62043,
+      "liquidityUsd": 18783.71,
+      "volume24h": 119.72,
+      "txns24h": 74,
+      "tokenAgeHours": 6631.901474722222
     },
     {
       "entityName": "CryptoKaduna",
@@ -630,7 +855,12 @@
       "walletCount": 1,
       "wallets": [
         "BTWdJQ4h9NiQPY11RMn2rQ8E3NZLKqjNPYSACcHu7kmr"
-      ]
+      ],
+      "marketCap": 199595,
+      "liquidityUsd": 121334.59,
+      "volume24h": 322.53,
+      "txns24h": 20,
+      "tokenAgeHours": 14529.960641388889
     },
     {
       "entityName": "CryptoKaduna",
@@ -644,7 +874,12 @@
       "walletCount": 1,
       "wallets": [
         "BTWdJQ4h9NiQPY11RMn2rQ8E3NZLKqjNPYSACcHu7kmr"
-      ]
+      ],
+      "marketCap": 52153,
+      "liquidityUsd": 44343.67,
+      "volume24h": 897.4,
+      "txns24h": 6,
+      "tokenAgeHours": 17264.1717525
     },
     {
       "entityName": "CryptoKaduna",
@@ -658,7 +893,12 @@
       "walletCount": 1,
       "wallets": [
         "ForQYxfhLMv3ieCWQYxMWwACZZTp16rBUe3r8cwRLnB5"
-      ]
+      ],
+      "marketCap": 13061,
+      "liquidityUsd": 14524.02,
+      "volume24h": 49.85,
+      "txns24h": 1,
+      "tokenAgeHours": 14439.55314138889
     },
     {
       "entityName": "CryptoKaduna",
@@ -672,7 +912,12 @@
       "walletCount": 1,
       "wallets": [
         "BTWdJQ4h9NiQPY11RMn2rQ8E3NZLKqjNPYSACcHu7kmr"
-      ]
+      ],
+      "marketCap": 5837,
+      "liquidityUsd": 7499.35,
+      "volume24h": 27.05,
+      "txns24h": 18,
+      "tokenAgeHours": 12803.481474722223
     },
     {
       "entityName": "CryptoNinjaah",
@@ -686,7 +931,12 @@
       "walletCount": 1,
       "wallets": [
         "3AWDTDGZiW8joyfA52LKL7GUWLoKBCBUBLUE5JoWgBCu"
-      ]
+      ],
+      "marketCap": 284952,
+      "liquidityUsd": 88645.51,
+      "volume24h": 36945.29,
+      "txns24h": 402,
+      "tokenAgeHours": 3291.8420302777777
     },
     {
       "entityName": "CryptoNinjaah",
@@ -700,7 +950,12 @@
       "walletCount": 1,
       "wallets": [
         "3gxDtXUegwou8DLKBTY77859934XEN2DGKJV3vH4krFX"
-      ]
+      ],
+      "marketCap": 148581,
+      "liquidityUsd": 34223.7,
+      "volume24h": 14806.57,
+      "txns24h": 149,
+      "tokenAgeHours": 6372.769530277777
     },
     {
       "entityName": "CryptoNinjaah",
@@ -714,7 +969,12 @@
       "walletCount": 1,
       "wallets": [
         "3AWDTDGZiW8joyfA52LKL7GUWLoKBCBUBLUE5JoWgBCu"
-      ]
+      ],
+      "marketCap": 55709,
+      "liquidityUsd": 30550.83,
+      "volume24h": 2804.32,
+      "txns24h": 45,
+      "tokenAgeHours": 3732.6992525
     },
     {
       "entityName": "CryptoNinjaah",
@@ -728,7 +988,12 @@
       "walletCount": 1,
       "wallets": [
         "3AWDTDGZiW8joyfA52LKL7GUWLoKBCBUBLUE5JoWgBCu"
-      ]
+      ],
+      "marketCap": 26331,
+      "liquidityUsd": 15638.08,
+      "volume24h": 261.38,
+      "txns24h": 7,
+      "tokenAgeHours": 4968.614530277778
     },
     {
       "entityName": "DegenDuck",
@@ -743,7 +1008,12 @@
       "wallets": [
         "9ujdbQAauYTRTMRFsHwcchALdLzncAbyX7JZWCTfYDRN",
         "HVz4GQE4tS1k7hgVTCzFgPDmLmTzzRQMfuEhdfoZpfj4"
-      ]
+      ],
+      "marketCap": 67799131,
+      "liquidityUsd": 63020.18,
+      "volume24h": 399394.01,
+      "txns24h": 8564,
+      "tokenAgeHours": 5419.108046388889
     },
     {
       "entityName": "DegenDuck",
@@ -758,7 +1028,12 @@
       "wallets": [
         "9ujdbQAauYTRTMRFsHwcchALdLzncAbyX7JZWCTfYDRN",
         "HVz4GQE4tS1k7hgVTCzFgPDmLmTzzRQMfuEhdfoZpfj4"
-      ]
+      ],
+      "marketCap": 74865003782,
+      "liquidityUsd": 3788385.87,
+      "volume24h": 1128444.33,
+      "txns24h": 2151,
+      "tokenAgeHours": 16077.566935277779
     },
     {
       "entityName": "Dogoshii",
@@ -774,7 +1049,12 @@
         "CUsUzbVnmoVcNRW6XDcP6KeZDjfdmMKyyMMLeBh1Rcks",
         "5UD1VhcYtiQxvsYp3hjiQVf8sgsEuAut7Fb7QK6xkxua",
         "F4xveq9jHiznb1Swy13AdgQBBZfNb6YcZiF1xJMSxKvW"
-      ]
+      ],
+      "marketCap": 165193,
+      "liquidityUsd": 38348.12,
+      "volume24h": 59508.09,
+      "txns24h": 1218,
+      "tokenAgeHours": 1295.0667525
     },
     {
       "entityName": "Dogoshii",
@@ -789,7 +1069,12 @@
       "wallets": [
         "CUsUzbVnmoVcNRW6XDcP6KeZDjfdmMKyyMMLeBh1Rcks",
         "F4xveq9jHiznb1Swy13AdgQBBZfNb6YcZiF1xJMSxKvW"
-      ]
+      ],
+      "marketCap": 161567,
+      "liquidityUsd": 31597.99,
+      "volume24h": 6986.68,
+      "txns24h": 140,
+      "tokenAgeHours": 1100.6698080555554
     },
     {
       "entityName": "Dogoshii",
@@ -803,7 +1088,12 @@
       "walletCount": 1,
       "wallets": [
         "pgUUG1a76oLGex9CLfDR9wTpYKk3gwm2KuSzCpygggD"
-      ]
+      ],
+      "marketCap": 136679,
+      "liquidityUsd": 24261.86,
+      "volume24h": 5177.48,
+      "txns24h": 54,
+      "tokenAgeHours": 3728.1706413888887
     },
     {
       "entityName": "Dogoshii",
@@ -817,7 +1107,12 @@
       "walletCount": 1,
       "wallets": [
         "CUsUzbVnmoVcNRW6XDcP6KeZDjfdmMKyyMMLeBh1Rcks"
-      ]
+      ],
+      "marketCap": 104984524,
+      "liquidityUsd": 1656963.98,
+      "volume24h": 67581.31,
+      "txns24h": 233,
+      "tokenAgeHours": 12883.497863611112
     },
     {
       "entityName": "Dogoshii",
@@ -831,7 +1126,12 @@
       "walletCount": 1,
       "wallets": [
         "CUsUzbVnmoVcNRW6XDcP6KeZDjfdmMKyyMMLeBh1Rcks"
-      ]
+      ],
+      "marketCap": 20045,
+      "liquidityUsd": 12962.1,
+      "volume24h": 3363.04,
+      "txns24h": 75,
+      "tokenAgeHours": 2839.8556413888887
     },
     {
       "entityName": "Fundedbysisterofvitalik (0xdyoooor) | Dewhales",
@@ -845,7 +1145,12 @@
       "walletCount": 1,
       "wallets": [
         "BGSLvBb6Rn4r21skKtRyE8NPXvkmkbUdNtDqGhTDWTe5"
-      ]
+      ],
+      "marketCap": 533189144,
+      "liquidityUsd": 86411.04,
+      "volume24h": 239501.19,
+      "txns24h": 3963,
+      "tokenAgeHours": 8073.7217525
     },
     {
       "entityName": "Fundedbysisterofvitalik (0xdyoooor) | Dewhales",
@@ -860,7 +1165,12 @@
       "wallets": [
         "BH84Uo2YAnyWRUWeWyfFzttRmE51V682xUaD6NrLHM88",
         "BGSLvBb6Rn4r21skKtRyE8NPXvkmkbUdNtDqGhTDWTe5"
-      ]
+      ],
+      "marketCap": 129110096,
+      "liquidityUsd": 5705029.44,
+      "volume24h": 3708842.5,
+      "txns24h": 7802,
+      "tokenAgeHours": 14540.763974722222
     },
     {
       "entityName": "Fundedbysisterofvitalik (0xdyoooor) | Dewhales",
@@ -874,7 +1184,12 @@
       "walletCount": 1,
       "wallets": [
         "BGSLvBb6Rn4r21skKtRyE8NPXvkmkbUdNtDqGhTDWTe5"
-      ]
+      ],
+      "marketCap": 459728774,
+      "liquidityUsd": 154289.54,
+      "volume24h": 345244.44,
+      "txns24h": 13017,
+      "tokenAgeHours": 12323.065919166667
     },
     {
       "entityName": "Fundedbysisterofvitalik (0xdyoooor) | Dewhales",
@@ -888,7 +1203,12 @@
       "walletCount": 1,
       "wallets": [
         "BH84Uo2YAnyWRUWeWyfFzttRmE51V682xUaD6NrLHM88"
-      ]
+      ],
+      "marketCap": 22905297,
+      "liquidityUsd": 72152.26,
+      "volume24h": 252920.61,
+      "txns24h": 6506,
+      "tokenAgeHours": 5484.840919166667
     },
     {
       "entityName": "Fundedbysisterofvitalik (0xdyoooor) | Dewhales",
@@ -902,7 +1222,12 @@
       "walletCount": 1,
       "wallets": [
         "Bh8hrvHnmHz3AzemJ2FLLwwHUFeK92UfBDeeprjnvkAH"
-      ]
+      ],
+      "marketCap": 460246,
+      "liquidityUsd": 84761.19,
+      "volume24h": 119040.76,
+      "txns24h": 1627,
+      "tokenAgeHours": 489.8686969444444
     },
     {
       "entityName": "Fundedbysisterofvitalik (0xdyoooor) | Dewhales",
@@ -916,7 +1241,12 @@
       "walletCount": 1,
       "wallets": [
         "BH84Uo2YAnyWRUWeWyfFzttRmE51V682xUaD6NrLHM88"
-      ]
+      ],
+      "marketCap": 6173015,
+      "liquidityUsd": 462628.01,
+      "volume24h": 61807.35,
+      "txns24h": 306,
+      "tokenAgeHours": 1004.3636969444444
     },
     {
       "entityName": "Fundedbysisterofvitalik (0xdyoooor) | Dewhales",
@@ -932,7 +1262,12 @@
         "BH84Uo2YAnyWRUWeWyfFzttRmE51V682xUaD6NrLHM88",
         "A6DurJbMkzDYhZmnrwndVbRfWNfmLrnsy6LJztPDX77w",
         "BGSLvBb6Rn4r21skKtRyE8NPXvkmkbUdNtDqGhTDWTe5"
-      ]
+      ],
+      "marketCap": 1307945,
+      "liquidityUsd": 85608.06,
+      "volume24h": 15082.95,
+      "txns24h": 320,
+      "tokenAgeHours": 5841.331196944445
     },
     {
       "entityName": "Fundedbysisterofvitalik (0xdyoooor) | Dewhales",
@@ -946,7 +1281,12 @@
       "walletCount": 1,
       "wallets": [
         "BH84Uo2YAnyWRUWeWyfFzttRmE51V682xUaD6NrLHM88"
-      ]
+      ],
+      "marketCap": 1102565,
+      "liquidityUsd": 275516.87,
+      "volume24h": 42817.45,
+      "txns24h": 379,
+      "tokenAgeHours": 6508.402863611111
     },
     {
       "entityName": "Fundedbysisterofvitalik (0xdyoooor) | Dewhales",
@@ -960,7 +1300,12 @@
       "walletCount": 1,
       "wallets": [
         "BH84Uo2YAnyWRUWeWyfFzttRmE51V682xUaD6NrLHM88"
-      ]
+      ],
+      "marketCap": 253845,
+      "liquidityUsd": 59162.23,
+      "volume24h": 25019.48,
+      "txns24h": 221,
+      "tokenAgeHours": 534.2303636111111
     },
     {
       "entityName": "Fundedbysisterofvitalik (0xdyoooor) | Dewhales",
@@ -974,7 +1319,12 @@
       "walletCount": 1,
       "wallets": [
         "BH84Uo2YAnyWRUWeWyfFzttRmE51V682xUaD6NrLHM88"
-      ]
+      ],
+      "marketCap": 19746,
+      "liquidityUsd": 11495.12,
+      "volume24h": 3468.19,
+      "txns24h": 81,
+      "tokenAgeHours": 5503.9217525
     },
     {
       "entityName": "Fundedbysisterofvitalik (0xdyoooor) | Dewhales",
@@ -988,7 +1338,12 @@
       "walletCount": 1,
       "wallets": [
         "BH84Uo2YAnyWRUWeWyfFzttRmE51V682xUaD6NrLHM88"
-      ]
+      ],
+      "marketCap": 16242,
+      "liquidityUsd": 9423.63,
+      "volume24h": 3649.14,
+      "txns24h": 143,
+      "tokenAgeHours": 496.68508583333335
     },
     {
       "entityName": "Fundedbysisterofvitalik (0xdyoooor) | Dewhales",
@@ -1002,7 +1357,12 @@
       "walletCount": 1,
       "wallets": [
         "BH84Uo2YAnyWRUWeWyfFzttRmE51V682xUaD6NrLHM88"
-      ]
+      ],
+      "marketCap": 16399,
+      "liquidityUsd": 10870.46,
+      "volume24h": 6425.39,
+      "txns24h": 119,
+      "tokenAgeHours": 602.8307452777777
     },
     {
       "entityName": "Fundedbysisterofvitalik (0xdyoooor) | Dewhales",
@@ -1016,7 +1376,12 @@
       "walletCount": 1,
       "wallets": [
         "BH84Uo2YAnyWRUWeWyfFzttRmE51V682xUaD6NrLHM88"
-      ]
+      ],
+      "marketCap": 6903.78,
+      "liquidityUsd": null,
+      "volume24h": 356.92,
+      "txns24h": 11,
+      "tokenAgeHours": 3759.3949119444446
     },
     {
       "entityName": "Game for one",
@@ -1031,7 +1396,12 @@
       "wallets": [
         "DhUFXgRCBLJuEg4WA2ou9GjLuNtcXWPGPNTd6pxiJZXL",
         "ENkZtLj1onzQRGnEeRkQfFzBeeY2dCeiQMXDzh8XbQbj"
-      ]
+      ],
+      "marketCap": 74865003782,
+      "liquidityUsd": 3788385.87,
+      "volume24h": 1128444.33,
+      "txns24h": 2151,
+      "tokenAgeHours": 16077.566935277779
     },
     {
       "entityName": "Game for one",
@@ -1045,7 +1415,12 @@
       "walletCount": 1,
       "wallets": [
         "ENkZtLj1onzQRGnEeRkQfFzBeeY2dCeiQMXDzh8XbQbj"
-      ]
+      ],
+      "marketCap": 2322273,
+      "liquidityUsd": 170060.73,
+      "volume24h": 83813.66,
+      "txns24h": 897,
+      "tokenAgeHours": 2687.7188008333333
     },
     {
       "entityName": "Gem Trader 07 (Conviction Hold + PEPE Chad) | REPPO",
@@ -1059,7 +1434,12 @@
       "walletCount": 1,
       "wallets": [
         "DTxWNSCoUKvdRNtgXmJipEEC5AQWEB1TMnWtosRH4w75"
-      ]
+      ],
+      "marketCap": 21053093,
+      "liquidityUsd": 824152.42,
+      "volume24h": 435134.08,
+      "txns24h": 2766,
+      "tokenAgeHours": 3781.325189722222
     },
     {
       "entityName": "Gem Trader 07 (Conviction Hold + PEPE Chad) | REPPO",
@@ -1073,7 +1453,12 @@
       "walletCount": 1,
       "wallets": [
         "DTxWNSCoUKvdRNtgXmJipEEC5AQWEB1TMnWtosRH4w75"
-      ]
+      ],
+      "marketCap": 74865003782,
+      "liquidityUsd": 3788385.87,
+      "volume24h": 1128444.33,
+      "txns24h": 2151,
+      "tokenAgeHours": 16077.566935277779
     },
     {
       "entityName": "Gem Trader 07 (Conviction Hold + PEPE Chad) | REPPO",
@@ -1087,7 +1472,12 @@
       "walletCount": 1,
       "wallets": [
         "DTxWNSCoUKvdRNtgXmJipEEC5AQWEB1TMnWtosRH4w75"
-      ]
+      ],
+      "marketCap": 275502,
+      "liquidityUsd": 84817.93,
+      "volume24h": 7821.65,
+      "txns24h": 78,
+      "tokenAgeHours": 4037.386578611111
     },
     {
       "entityName": "Hansolar",
@@ -1101,7 +1491,12 @@
       "walletCount": 1,
       "wallets": [
         "JBEkiMyzReAGbL5NnNaXFeSEFzbbJJNbCZsg3Gy6Qijn"
-      ]
+      ],
+      "marketCap": 67799131,
+      "liquidityUsd": 63020.18,
+      "volume24h": 399394.01,
+      "txns24h": 8564,
+      "tokenAgeHours": 5419.108046388889
     },
     {
       "entityName": "Hansolar",
@@ -1115,7 +1510,12 @@
       "walletCount": 1,
       "wallets": [
         "JBEkiMyzReAGbL5NnNaXFeSEFzbbJJNbCZsg3Gy6Qijn"
-      ]
+      ],
+      "marketCap": 1210958,
+      "liquidityUsd": 22482.51,
+      "volume24h": 3431.47,
+      "txns24h": 46,
+      "tokenAgeHours": 2617.253800833333
     },
     {
       "entityName": "hizoupor",
@@ -1129,7 +1529,12 @@
       "walletCount": 1,
       "wallets": [
         "7tckyorz5jukWk8LbXE2FPovTukKBJw1TLzqcWDAY4b4"
-      ]
+      ],
+      "marketCap": 5420043,
+      "liquidityUsd": 235332.39,
+      "volume24h": 353834.82,
+      "txns24h": 3826,
+      "tokenAgeHours": 2139.8916575
     },
     {
       "entityName": "hizoupor",
@@ -1143,7 +1548,12 @@
       "walletCount": 1,
       "wallets": [
         "7tckyorz5jukWk8LbXE2FPovTukKBJw1TLzqcWDAY4b4"
-      ]
+      ],
+      "marketCap": 1389672,
+      "liquidityUsd": 112908.76,
+      "volume24h": 1095703.98,
+      "txns24h": 9755,
+      "tokenAgeHours": 427.0190786111111
     },
     {
       "entityName": "hizoupor",
@@ -1157,7 +1567,12 @@
       "walletCount": 1,
       "wallets": [
         "7tckyorz5jukWk8LbXE2FPovTukKBJw1TLzqcWDAY4b4"
-      ]
+      ],
+      "marketCap": 4188133,
+      "liquidityUsd": 266678.9,
+      "volume24h": 717501.16,
+      "txns24h": 4050,
+      "tokenAgeHours": 213.67018972222223
     },
     {
       "entityName": "hizoupor",
@@ -1171,7 +1586,12 @@
       "walletCount": 1,
       "wallets": [
         "7tckyorz5jukWk8LbXE2FPovTukKBJw1TLzqcWDAY4b4"
-      ]
+      ],
+      "marketCap": 530698,
+      "liquidityUsd": 59884.99,
+      "volume24h": 30418.58,
+      "txns24h": 348,
+      "tokenAgeHours": 1329.5104675
     },
     {
       "entityName": "hizoupor",
@@ -1185,7 +1605,12 @@
       "walletCount": 1,
       "wallets": [
         "7tckyorz5jukWk8LbXE2FPovTukKBJw1TLzqcWDAY4b4"
-      ]
+      ],
+      "marketCap": 478090,
+      "liquidityUsd": 16368.75,
+      "volume24h": 38397.58,
+      "txns24h": 1279,
+      "tokenAgeHours": 9104.649078611112
     },
     {
       "entityName": "ImBallzy",
@@ -1200,7 +1625,12 @@
       "wallets": [
         "sKco3wGagFJ4V1GUdnMEadnvC392XhAXkw3jBfH1HxG",
         "9UaWXa4gCMza8FYFVXHe3NApoiCCia29r4CQ125S6G4b"
-      ]
+      ],
+      "marketCap": 74865003782,
+      "liquidityUsd": 3788385.87,
+      "volume24h": 1128444.33,
+      "txns24h": 2151,
+      "tokenAgeHours": 16077.566935277779
     },
     {
       "entityName": "ImBallzy",
@@ -1214,7 +1644,12 @@
       "walletCount": 1,
       "wallets": [
         "9UaWXa4gCMza8FYFVXHe3NApoiCCia29r4CQ125S6G4b"
-      ]
+      ],
+      "marketCap": 378237,
+      "liquidityUsd": 48950.4,
+      "volume24h": 40861.19,
+      "txns24h": 282,
+      "tokenAgeHours": 484.6715786111111
     },
     {
       "entityName": "ImBallzy",
@@ -1228,7 +1663,12 @@
       "walletCount": 1,
       "wallets": [
         "9UaWXa4gCMza8FYFVXHe3NApoiCCia29r4CQ125S6G4b"
-      ]
+      ],
+      "marketCap": 125086,
+      "liquidityUsd": 42056.27,
+      "volume24h": 29335.75,
+      "txns24h": 525,
+      "tokenAgeHours": 2476.5679675
     },
     {
       "entityName": "ImBallzy",
@@ -1242,7 +1682,12 @@
       "walletCount": 1,
       "wallets": [
         "sKco3wGagFJ4V1GUdnMEadnvC392XhAXkw3jBfH1HxG"
-      ]
+      ],
+      "marketCap": 61384582,
+      "liquidityUsd": 98521.04,
+      "volume24h": 93310.08,
+      "txns24h": 2163,
+      "tokenAgeHours": 5653.926856388889
     },
     {
       "entityName": "IT4L",
@@ -1256,7 +1701,12 @@
       "walletCount": 1,
       "wallets": [
         "2NCTbbnUfXNABUwqB2vEMkD3EJQcvQprHDQJQ1Bijvaz"
-      ]
+      ],
+      "marketCap": 254016150,
+      "liquidityUsd": 993413.71,
+      "volume24h": 1545192.99,
+      "txns24h": 8338,
+      "tokenAgeHours": 22690.68768972222
     },
     {
       "entityName": "IT4L",
@@ -1270,7 +1720,12 @@
       "walletCount": 1,
       "wallets": [
         "2NCTbbnUfXNABUwqB2vEMkD3EJQcvQprHDQJQ1Bijvaz"
-      ]
+      ],
+      "marketCap": 715095170,
+      "liquidityUsd": 359915.84,
+      "volume24h": 528516.53,
+      "txns24h": 12389,
+      "tokenAgeHours": 26622.88685638889
     },
     {
       "entityName": "IT4L",
@@ -1284,7 +1739,12 @@
       "walletCount": 1,
       "wallets": [
         "6FJPtnqLNa4qo3XZnQBjstoeKPNMGnU8VtoTBvLLMWET"
-      ]
+      ],
+      "marketCap": 1454129,
+      "liquidityUsd": 97644.05,
+      "volume24h": 2941.44,
+      "txns24h": 52,
+      "tokenAgeHours": 1585.4410230555557
     },
     {
       "entityName": "IT4L",
@@ -1298,7 +1758,12 @@
       "walletCount": 1,
       "wallets": [
         "6FJPtnqLNa4qo3XZnQBjstoeKPNMGnU8VtoTBvLLMWET"
-      ]
+      ],
+      "marketCap": 1634914,
+      "liquidityUsd": 246036.86,
+      "volume24h": 42093.85,
+      "txns24h": 262,
+      "tokenAgeHours": 8978.421856388888
     },
     {
       "entityName": "IT4L",
@@ -1312,7 +1777,12 @@
       "walletCount": 1,
       "wallets": [
         "2NCTbbnUfXNABUwqB2vEMkD3EJQcvQprHDQJQ1Bijvaz"
-      ]
+      ],
+      "marketCap": 74865003782,
+      "liquidityUsd": 3788385.87,
+      "volume24h": 1128444.33,
+      "txns24h": 2151,
+      "tokenAgeHours": 16077.566935277779
     },
     {
       "entityName": "IT4L",
@@ -1326,7 +1796,12 @@
       "walletCount": 1,
       "wallets": [
         "6FJPtnqLNa4qo3XZnQBjstoeKPNMGnU8VtoTBvLLMWET"
-      ]
+      ],
+      "marketCap": 110942,
+      "liquidityUsd": 38946.66,
+      "volume24h": 3062.21,
+      "txns24h": 31,
+      "tokenAgeHours": 13547.592689722222
     },
     {
       "entityName": "IT4L",
@@ -1340,7 +1815,12 @@
       "walletCount": 1,
       "wallets": [
         "HdxkiXqeN6qpK2YbG51W23QSWj3Yygc1eEk2zwmKJExp"
-      ]
+      ],
+      "marketCap": 171154,
+      "liquidityUsd": 48981.58,
+      "volume24h": 101683.05,
+      "txns24h": 1246,
+      "tokenAgeHours": 250.3543563888889
     },
     {
       "entityName": "IT4L",
@@ -1355,7 +1835,12 @@
       "wallets": [
         "HdxkiXqeN6qpK2YbG51W23QSWj3Yygc1eEk2zwmKJExp",
         "6FJPtnqLNa4qo3XZnQBjstoeKPNMGnU8VtoTBvLLMWET"
-      ]
+      ],
+      "marketCap": 42627,
+      "liquidityUsd": 24068.09,
+      "volume24h": 3997.52,
+      "txns24h": 42,
+      "tokenAgeHours": 3846.384078611111
     },
     {
       "entityName": "IT4L",
@@ -1369,7 +1854,12 @@
       "walletCount": 1,
       "wallets": [
         "HdxkiXqeN6qpK2YbG51W23QSWj3Yygc1eEk2zwmKJExp"
-      ]
+      ],
+      "marketCap": 150481,
+      "liquidityUsd": 33368.7,
+      "volume24h": 168001.08,
+      "txns24h": 2181,
+      "tokenAgeHours": 129.32963416666666
     },
     {
       "entityName": "IT4L",
@@ -1383,7 +1873,12 @@
       "walletCount": 1,
       "wallets": [
         "6FJPtnqLNa4qo3XZnQBjstoeKPNMGnU8VtoTBvLLMWET"
-      ]
+      ],
+      "marketCap": 25663,
+      "liquidityUsd": 21133.69,
+      "volume24h": 91.02,
+      "txns24h": 4,
+      "tokenAgeHours": 11770.344911944445
     },
     {
       "entityName": "jai_prasad 17",
@@ -1397,7 +1892,12 @@
       "walletCount": 1,
       "wallets": [
         "HRjyLEVggZGjF1EzTbTKfbTwXrPNQTG4jvsR5BTVgL4L"
-      ]
+      ],
+      "marketCap": 74865003782,
+      "liquidityUsd": 3788385.87,
+      "volume24h": 1128444.33,
+      "txns24h": 2151,
+      "tokenAgeHours": 16077.566935277779
     },
     {
       "entityName": "jai_prasad 17",
@@ -1411,7 +1911,12 @@
       "walletCount": 1,
       "wallets": [
         "HRjyLEVggZGjF1EzTbTKfbTwXrPNQTG4jvsR5BTVgL4L"
-      ]
+      ],
+      "marketCap": 4767713,
+      "liquidityUsd": 244327.25,
+      "volume24h": 24463.95,
+      "txns24h": 83,
+      "tokenAgeHours": 1496.5379675
     },
     {
       "entityName": "jai_prasad 17",
@@ -1425,7 +1930,12 @@
       "walletCount": 1,
       "wallets": [
         "5oi1uNwqVe2urRU9efhL2rYgpruagnAHB5NiUgirNwui"
-      ]
+      ],
+      "marketCap": 28009150,
+      "liquidityUsd": 1327382.15,
+      "volume24h": 268764.48,
+      "txns24h": 1075,
+      "tokenAgeHours": 9961.957411944444
     },
     {
       "entityName": "JoshuaDeuk",
@@ -1439,7 +1949,12 @@
       "walletCount": 1,
       "wallets": [
         "7z9bE7yseSkqZaLmkjAQm4QSM39pLRL6tQxqCZqGdBbd"
-      ]
+      ],
+      "marketCap": 633219770,
+      "liquidityUsd": 275112.16,
+      "volume24h": 828183.4,
+      "txns24h": 17671,
+      "tokenAgeHours": 20806.336856388887
     },
     {
       "entityName": "Kamino Crypto",
@@ -1453,7 +1968,12 @@
       "walletCount": 1,
       "wallets": [
         "B5Wwr2a4YWAQafbji3XoxLtR8Hyw1XrTVHiY8XzYHCsb"
-      ]
+      ],
+      "marketCap": 125587,
+      "liquidityUsd": 34711.56,
+      "volume24h": 2418.47,
+      "txns24h": 38,
+      "tokenAgeHours": 3002.8957452777777
     },
     {
       "entityName": "Kamino Crypto",
@@ -1467,7 +1987,12 @@
       "walletCount": 1,
       "wallets": [
         "B5Wwr2a4YWAQafbji3XoxLtR8Hyw1XrTVHiY8XzYHCsb"
-      ]
+      ],
+      "marketCap": 441180,
+      "liquidityUsd": 50584.94,
+      "volume24h": 80622.78,
+      "txns24h": 192,
+      "tokenAgeHours": 3512.849634166667
     },
     {
       "entityName": "Kamino Crypto",
@@ -1481,7 +2006,12 @@
       "walletCount": 1,
       "wallets": [
         "B5Wwr2a4YWAQafbji3XoxLtR8Hyw1XrTVHiY8XzYHCsb"
-      ]
+      ],
+      "marketCap": 88882,
+      "liquidityUsd": 23905.23,
+      "volume24h": 49145.61,
+      "txns24h": 721,
+      "tokenAgeHours": 314.63963416666667
     },
     {
       "entityName": "Kamino Crypto",
@@ -1495,7 +2025,12 @@
       "walletCount": 1,
       "wallets": [
         "B5Wwr2a4YWAQafbji3XoxLtR8Hyw1XrTVHiY8XzYHCsb"
-      ]
+      ],
+      "marketCap": 189837,
+      "liquidityUsd": 36080.14,
+      "volume24h": 28721.92,
+      "txns24h": 323,
+      "tokenAgeHours": 1662.9396341666666
     },
     {
       "entityName": "Kamino Crypto",
@@ -1509,7 +2044,12 @@
       "walletCount": 1,
       "wallets": [
         "B5Wwr2a4YWAQafbji3XoxLtR8Hyw1XrTVHiY8XzYHCsb"
-      ]
+      ],
+      "marketCap": 73329,
+      "liquidityUsd": 22152.65,
+      "volume24h": 3515.93,
+      "txns24h": 71,
+      "tokenAgeHours": 994.8860230555556
     },
     {
       "entityName": "Kamino Crypto",
@@ -1523,7 +2063,12 @@
       "walletCount": 1,
       "wallets": [
         "B5Wwr2a4YWAQafbji3XoxLtR8Hyw1XrTVHiY8XzYHCsb"
-      ]
+      ],
+      "marketCap": 178441,
+      "liquidityUsd": 45297.77,
+      "volume24h": 73072.34,
+      "txns24h": 448,
+      "tokenAgeHours": 262.07193527777775
     },
     {
       "entityName": "Kamino Crypto",
@@ -1537,7 +2082,12 @@
       "walletCount": 1,
       "wallets": [
         "B5Wwr2a4YWAQafbji3XoxLtR8Hyw1XrTVHiY8XzYHCsb"
-      ]
+      ],
+      "marketCap": 45179,
+      "liquidityUsd": 16181.61,
+      "volume24h": 30766.6,
+      "txns24h": 609,
+      "tokenAgeHours": 2522.4961177777777
     },
     {
       "entityName": "Kamino Crypto",
@@ -1551,7 +2101,12 @@
       "walletCount": 1,
       "wallets": [
         "B5Wwr2a4YWAQafbji3XoxLtR8Hyw1XrTVHiY8XzYHCsb"
-      ]
+      ],
+      "marketCap": 204170,
+      "liquidityUsd": 34528.08,
+      "volume24h": 285068.38,
+      "txns24h": 3595,
+      "tokenAgeHours": 136.4419513888889
     },
     {
       "entityName": "milfcollector",
@@ -1565,7 +2120,12 @@
       "walletCount": 1,
       "wallets": [
         "HYqMCUf24LCh2Q6BCvzTzePJ1tzMWUVCTjiJ86JYjEBv"
-      ]
+      ],
+      "marketCap": 74865003782,
+      "liquidityUsd": 3788385.87,
+      "volume24h": 1128444.33,
+      "txns24h": 2151,
+      "tokenAgeHours": 16077.566935277779
     },
     {
       "entityName": "milfcollector",
@@ -1579,7 +2139,12 @@
       "walletCount": 1,
       "wallets": [
         "HYqMCUf24LCh2Q6BCvzTzePJ1tzMWUVCTjiJ86JYjEBv"
-      ]
+      ],
+      "marketCap": 71978293,
+      "liquidityUsd": 3080735.97,
+      "volume24h": 1694575.71,
+      "txns24h": 4547,
+      "tokenAgeHours": 10112.420006944445
     },
     {
       "entityName": "milfcollector",
@@ -1593,7 +2158,12 @@
       "walletCount": 1,
       "wallets": [
         "HYqMCUf24LCh2Q6BCvzTzePJ1tzMWUVCTjiJ86JYjEBv"
-      ]
+      ],
+      "marketCap": 28009150,
+      "liquidityUsd": 1327382.15,
+      "volume24h": 268764.48,
+      "txns24h": 1075,
+      "tokenAgeHours": 9961.957411944444
     },
     {
       "entityName": "milfcollector",
@@ -1607,7 +2177,12 @@
       "walletCount": 1,
       "wallets": [
         "HYqMCUf24LCh2Q6BCvzTzePJ1tzMWUVCTjiJ86JYjEBv"
-      ]
+      ],
+      "marketCap": 5420043,
+      "liquidityUsd": 235332.39,
+      "volume24h": 353834.82,
+      "txns24h": 3826,
+      "tokenAgeHours": 2139.8916575
     },
     {
       "entityName": "milfcollector",
@@ -1621,7 +2196,12 @@
       "walletCount": 1,
       "wallets": [
         "HYqMCUf24LCh2Q6BCvzTzePJ1tzMWUVCTjiJ86JYjEBv"
-      ]
+      ],
+      "marketCap": 12483681,
+      "liquidityUsd": 375616.89,
+      "volume24h": 1711405.45,
+      "txns24h": 15760,
+      "tokenAgeHours": 585.1372130555555
     },
     {
       "entityName": "milfcollector",
@@ -1635,7 +2215,12 @@
       "walletCount": 1,
       "wallets": [
         "HYqMCUf24LCh2Q6BCvzTzePJ1tzMWUVCTjiJ86JYjEBv"
-      ]
+      ],
+      "marketCap": 67799131,
+      "liquidityUsd": 63020.18,
+      "volume24h": 399394.01,
+      "txns24h": 8564,
+      "tokenAgeHours": 5419.108046388889
     },
     {
       "entityName": "milfcollector",
@@ -1649,7 +2234,12 @@
       "walletCount": 1,
       "wallets": [
         "HYqMCUf24LCh2Q6BCvzTzePJ1tzMWUVCTjiJ86JYjEBv"
-      ]
+      ],
+      "marketCap": 186497397348,
+      "liquidityUsd": 26641.86,
+      "volume24h": 12312.44,
+      "txns24h": 284,
+      "tokenAgeHours": 18373.60304638889
     },
     {
       "entityName": "milfcollector",
@@ -1663,7 +2253,12 @@
       "walletCount": 1,
       "wallets": [
         "HYqMCUf24LCh2Q6BCvzTzePJ1tzMWUVCTjiJ86JYjEBv"
-      ]
+      ],
+      "marketCap": 6436187,
+      "liquidityUsd": 169206.1,
+      "volume24h": 377437.64,
+      "txns24h": 2588,
+      "tokenAgeHours": 1438.5586180555556
     },
     {
       "entityName": "milfcollector",
@@ -1677,7 +2272,12 @@
       "walletCount": 1,
       "wallets": [
         "HYqMCUf24LCh2Q6BCvzTzePJ1tzMWUVCTjiJ86JYjEBv"
-      ]
+      ],
+      "marketCap": 4617176,
+      "liquidityUsd": 225123.19,
+      "volume24h": 13896.5,
+      "txns24h": 137,
+      "tokenAgeHours": 11431.81695138889
     },
     {
       "entityName": "milfcollector",
@@ -1691,7 +2291,12 @@
       "walletCount": 1,
       "wallets": [
         "HYqMCUf24LCh2Q6BCvzTzePJ1tzMWUVCTjiJ86JYjEBv"
-      ]
+      ],
+      "marketCap": 1773122,
+      "liquidityUsd": 170900.18,
+      "volume24h": 141768.86,
+      "txns24h": 1963,
+      "tokenAgeHours": 1578.8952847222222
     },
     {
       "entityName": "pendle 4 alfafa",
@@ -1705,7 +2310,12 @@
       "walletCount": 1,
       "wallets": [
         "Gt4EbY5Se7z8e4eb9SkF3Rrc6Eoojr6LePPLesmwH9B"
-      ]
+      ],
+      "marketCap": 67799131,
+      "liquidityUsd": 63020.18,
+      "volume24h": 399394.01,
+      "txns24h": 8564,
+      "tokenAgeHours": 5419.108046388889
     },
     {
       "entityName": "pendle 4 alfafa",
@@ -1719,7 +2329,12 @@
       "walletCount": 1,
       "wallets": [
         "Gt4EbY5Se7z8e4eb9SkF3Rrc6Eoojr6LePPLesmwH9B"
-      ]
+      ],
+      "marketCap": 5420043,
+      "liquidityUsd": 235332.39,
+      "volume24h": 353834.82,
+      "txns24h": 3826,
+      "tokenAgeHours": 2139.8916575
     },
     {
       "entityName": "pendle 4 alfafa",
@@ -1733,7 +2348,12 @@
       "walletCount": 1,
       "wallets": [
         "Gt4EbY5Se7z8e4eb9SkF3Rrc6Eoojr6LePPLesmwH9B"
-      ]
+      ],
+      "marketCap": 2119652,
+      "liquidityUsd": 160436.05,
+      "volume24h": 28561.44,
+      "txns24h": 279,
+      "tokenAgeHours": 17114.148601944446
     },
     {
       "entityName": "pendle 4 alfafa",
@@ -1747,7 +2367,12 @@
       "walletCount": 1,
       "wallets": [
         "Gt4EbY5Se7z8e4eb9SkF3Rrc6Eoojr6LePPLesmwH9B"
-      ]
+      ],
+      "marketCap": 60538169,
+      "liquidityUsd": 65233.41,
+      "volume24h": 254739.18,
+      "txns24h": 3711,
+      "tokenAgeHours": 6130.7458402777775
     },
     {
       "entityName": "PuggyTrades | Gem Holder",
@@ -1762,7 +2387,12 @@
       "wallets": [
         "BiozYn55Y7p1Sbi83n93zS3Tm5EHHXMGKC9EQfSvg2So",
         "DASWiFZWTZntY1oQjsgS8bYVqmfgMmRGvvNu2wuvMNYU"
-      ]
+      ],
+      "marketCap": 74865003782,
+      "liquidityUsd": 3788385.87,
+      "volume24h": 1128444.33,
+      "txns24h": 2151,
+      "tokenAgeHours": 16077.566935277779
     },
     {
       "entityName": "PuggyTrades | Gem Holder",
@@ -1776,7 +2406,12 @@
       "walletCount": 1,
       "wallets": [
         "BiozYn55Y7p1Sbi83n93zS3Tm5EHHXMGKC9EQfSvg2So"
-      ]
+      ],
+      "marketCap": 2684454,
+      "liquidityUsd": 521727.84,
+      "volume24h": 39000.95,
+      "txns24h": 336,
+      "tokenAgeHours": 19764.072784722222
     },
     {
       "entityName": "PuggyTrades | Gem Holder",
@@ -1790,7 +2425,17 @@
       "walletCount": 1,
       "wallets": [
         "BiozYn55Y7p1Sbi83n93zS3Tm5EHHXMGKC9EQfSvg2So"
-      ]
+      ],
+      "marketCap": 3202380,
+      "liquidityUsd": 313775.9,
+      "volume24h": 107406.51,
+      "txns24h": 536,
+      "tokenAgeHours": 10012.955268611111,
+      "moniScore": 1694,
+      "moniLevel": 4,
+      "moniLevelName": "Established",
+      "moniMomentumScorePct": 0,
+      "moniMomentumRank": 19260
     },
     {
       "entityName": "PuggyTrades | Gem Holder",
@@ -1804,7 +2449,12 @@
       "walletCount": 1,
       "wallets": [
         "BiozYn55Y7p1Sbi83n93zS3Tm5EHHXMGKC9EQfSvg2So"
-      ]
+      ],
+      "marketCap": 56938,
+      "liquidityUsd": 42389.81,
+      "volume24h": 2359.59,
+      "txns24h": 20,
+      "tokenAgeHours": 12200.229451388888
     },
     {
       "entityName": "remusofmars",
@@ -1818,7 +2468,12 @@
       "walletCount": 1,
       "wallets": [
         "BCrTEXmWutwPz8qv6w1S5gDbaLnSLpXKM5kSGVWyyfxu"
-      ]
+      ],
+      "marketCap": 28009150,
+      "liquidityUsd": 1327382.15,
+      "volume24h": 268764.48,
+      "txns24h": 1075,
+      "tokenAgeHours": 9961.957411944444
     },
     {
       "entityName": "remusofmars",
@@ -1833,7 +2488,12 @@
       "wallets": [
         "BCrTEXmWutwPz8qv6w1S5gDbaLnSLpXKM5kSGVWyyfxu",
         "CzCKBeK3Y9RDpvctsFYGQSut4R5Y63XqAeYxXRuXqnZa"
-      ]
+      ],
+      "marketCap": 2165139,
+      "liquidityUsd": 408685.89,
+      "volume24h": 71635.82,
+      "txns24h": 607,
+      "tokenAgeHours": 9885.559173611111
     },
     {
       "entityName": "remusofmars",
@@ -1847,7 +2507,12 @@
       "walletCount": 1,
       "wallets": [
         "BCrTEXmWutwPz8qv6w1S5gDbaLnSLpXKM5kSGVWyyfxu"
-      ]
+      ],
+      "marketCap": 1773122,
+      "liquidityUsd": 170900.18,
+      "volume24h": 141768.86,
+      "txns24h": 1963,
+      "tokenAgeHours": 1578.8952847222222
     },
     {
       "entityName": "remusofmars",
@@ -1861,7 +2526,12 @@
       "walletCount": 1,
       "wallets": [
         "BCrTEXmWutwPz8qv6w1S5gDbaLnSLpXKM5kSGVWyyfxu"
-      ]
+      ],
+      "marketCap": 4188133,
+      "liquidityUsd": 266678.9,
+      "volume24h": 717501.16,
+      "txns24h": 4050,
+      "tokenAgeHours": 213.67018972222223
     },
     {
       "entityName": "remusofmars",
@@ -1875,7 +2545,12 @@
       "walletCount": 1,
       "wallets": [
         "BCrTEXmWutwPz8qv6w1S5gDbaLnSLpXKM5kSGVWyyfxu"
-      ]
+      ],
+      "marketCap": 74865003782,
+      "liquidityUsd": 3788385.87,
+      "volume24h": 1128444.33,
+      "txns24h": 2151,
+      "tokenAgeHours": 16077.566935277779
     },
     {
       "entityName": "remusofmars",
@@ -1889,7 +2564,12 @@
       "walletCount": 1,
       "wallets": [
         "BCrTEXmWutwPz8qv6w1S5gDbaLnSLpXKM5kSGVWyyfxu"
-      ]
+      ],
+      "marketCap": 246609,
+      "liquidityUsd": 63056.63,
+      "volume24h": 299089.2,
+      "txns24h": 19129,
+      "tokenAgeHours": 276.0955625
     },
     {
       "entityName": "remusofmars",
@@ -1904,7 +2584,12 @@
       "wallets": [
         "6cFSfFykD6mtoRei9Cp11nK6maogwr9TLFTfehWS5bpw",
         "BCrTEXmWutwPz8qv6w1S5gDbaLnSLpXKM5kSGVWyyfxu"
-      ]
+      ],
+      "marketCap": 12483681,
+      "liquidityUsd": 375616.89,
+      "volume24h": 1711405.45,
+      "txns24h": 15760,
+      "tokenAgeHours": 585.1372130555555
     },
     {
       "entityName": "remusofmars",
@@ -1918,7 +2603,12 @@
       "walletCount": 1,
       "wallets": [
         "BCrTEXmWutwPz8qv6w1S5gDbaLnSLpXKM5kSGVWyyfxu"
-      ]
+      ],
+      "marketCap": 478606,
+      "liquidityUsd": 76668.08,
+      "volume24h": 43016.19,
+      "txns24h": 480,
+      "tokenAgeHours": 605.8894513888889
     },
     {
       "entityName": "remusofmars",
@@ -1932,7 +2622,12 @@
       "walletCount": 1,
       "wallets": [
         "BCrTEXmWutwPz8qv6w1S5gDbaLnSLpXKM5kSGVWyyfxu"
-      ]
+      ],
+      "marketCap": 3241473,
+      "liquidityUsd": 270577.85,
+      "volume24h": 62491.53,
+      "txns24h": 1046,
+      "tokenAgeHours": 5905.198340277778
     },
     {
       "entityName": "remusofmars",
@@ -1946,7 +2641,12 @@
       "walletCount": 1,
       "wallets": [
         "BCrTEXmWutwPz8qv6w1S5gDbaLnSLpXKM5kSGVWyyfxu"
-      ]
+      ],
+      "marketCap": 428304,
+      "liquidityUsd": 117290.81,
+      "volume24h": 53325.2,
+      "txns24h": 721,
+      "tokenAgeHours": 2782.540284722222
     },
     {
       "entityName": "remusofmars",
@@ -1960,7 +2660,12 @@
       "walletCount": 1,
       "wallets": [
         "CzCKBeK3Y9RDpvctsFYGQSut4R5Y63XqAeYxXRuXqnZa"
-      ]
+      ],
+      "marketCap": 2247162,
+      "liquidityUsd": 347044.59,
+      "volume24h": 91569.74,
+      "txns24h": 2798,
+      "tokenAgeHours": 20764.792229166665
     },
     {
       "entityName": "remusofmars",
@@ -1974,7 +2679,12 @@
       "walletCount": 1,
       "wallets": [
         "CzCKBeK3Y9RDpvctsFYGQSut4R5Y63XqAeYxXRuXqnZa"
-      ]
+      ],
+      "marketCap": 1907792,
+      "liquidityUsd": 316775.49,
+      "volume24h": 33245.39,
+      "txns24h": 657,
+      "tokenAgeHours": 19730.137506944444
     },
     {
       "entityName": "remusofmars",
@@ -1988,7 +2698,12 @@
       "walletCount": 1,
       "wallets": [
         "CzCKBeK3Y9RDpvctsFYGQSut4R5Y63XqAeYxXRuXqnZa"
-      ]
+      ],
+      "marketCap": 42924,
+      "liquidityUsd": 26950.07,
+      "volume24h": 367.31,
+      "txns24h": 17,
+      "tokenAgeHours": 8422.909729166666
     },
     {
       "entityName": "SwansonBenson",
@@ -2002,7 +2717,12 @@
       "walletCount": 1,
       "wallets": [
         "4MUexsknac9JnghtyEj8gqMKHZFkFi8njVDd2CMhfzUu"
-      ]
+      ],
+      "marketCap": 67799131,
+      "liquidityUsd": 63020.18,
+      "volume24h": 399394.01,
+      "txns24h": 8564,
+      "tokenAgeHours": 5419.108046388889
     },
     {
       "entityName": "SwansonBenson",
@@ -2016,7 +2736,12 @@
       "walletCount": 1,
       "wallets": [
         "4MUexsknac9JnghtyEj8gqMKHZFkFi8njVDd2CMhfzUu"
-      ]
+      ],
+      "marketCap": 5420043,
+      "liquidityUsd": 235332.39,
+      "volume24h": 353834.82,
+      "txns24h": 3826,
+      "tokenAgeHours": 2139.8916575
     },
     {
       "entityName": "SwansonBenson",
@@ -2031,7 +2756,12 @@
       "wallets": [
         "3GJ8GLJJt4GUpdSrbbHqCth4QGHwEqc3iwgR1EGPHQ9w",
         "8jE5VjyywCKuNCmRsH1CkrMmwjNczj1BAUqTUwdq1qgn"
-      ]
+      ],
+      "marketCap": 3611791,
+      "liquidityUsd": 325764.62,
+      "volume24h": 42497.22,
+      "txns24h": 568,
+      "tokenAgeHours": 12300.447213055555
     },
     {
       "entityName": "SwansonBenson",
@@ -2045,7 +2775,12 @@
       "walletCount": 1,
       "wallets": [
         "4MUexsknac9JnghtyEj8gqMKHZFkFi8njVDd2CMhfzUu"
-      ]
+      ],
+      "marketCap": 145097,
+      "liquidityUsd": 32932.54,
+      "volume24h": 13226.81,
+      "txns24h": 215,
+      "tokenAgeHours": 515.6763958333333
     },
     {
       "entityName": "SwansonBenson",
@@ -2059,7 +2794,12 @@
       "walletCount": 1,
       "wallets": [
         "4MUexsknac9JnghtyEj8gqMKHZFkFi8njVDd2CMhfzUu"
-      ]
+      ],
+      "marketCap": 115207,
+      "liquidityUsd": 23468.47,
+      "volume24h": 61010.78,
+      "txns24h": 554,
+      "tokenAgeHours": 125.8405625
     },
     {
       "entityName": "SwansonBenson",
@@ -2073,7 +2813,12 @@
       "walletCount": 1,
       "wallets": [
         "4MUexsknac9JnghtyEj8gqMKHZFkFi8njVDd2CMhfzUu"
-      ]
+      ],
+      "marketCap": 23486,
+      "liquidityUsd": 12851.87,
+      "volume24h": 1547.41,
+      "txns24h": 47,
+      "tokenAgeHours": 2492.6308402777777
     },
     {
       "entityName": "SwansonBenson",
@@ -2088,7 +2833,12 @@
       "wallets": [
         "3BUmA4Bnb4n1oiwFAAAscDM5VhxLiGaeorhQ6ad6WcAC",
         "H1Xu6AcbAUG8FsLdNVEqeTdLzB8N7cnXF5n9uoywcfRK"
-      ]
+      ],
+      "marketCap": 633219770,
+      "liquidityUsd": 275112.16,
+      "volume24h": 828183.4,
+      "txns24h": 17671,
+      "tokenAgeHours": 20806.336856388887
     },
     {
       "entityName": "SwansonBenson",
@@ -2102,7 +2852,12 @@
       "walletCount": 1,
       "wallets": [
         "4MUexsknac9JnghtyEj8gqMKHZFkFi8njVDd2CMhfzUu"
-      ]
+      ],
+      "marketCap": 74865003782,
+      "liquidityUsd": 3788385.87,
+      "volume24h": 1128444.33,
+      "txns24h": 2151,
+      "tokenAgeHours": 16077.566935277779
     },
     {
       "entityName": "SwansonBenson",
@@ -2116,7 +2871,12 @@
       "walletCount": 1,
       "wallets": [
         "4MUexsknac9JnghtyEj8gqMKHZFkFi8njVDd2CMhfzUu"
-      ]
+      ],
+      "marketCap": 43161,
+      "liquidityUsd": 16784.59,
+      "volume24h": 3491.36,
+      "txns24h": 61,
+      "tokenAgeHours": 1011.1908402777777
     },
     {
       "entityName": "Tux | DCDAO",
@@ -2130,7 +2890,12 @@
       "walletCount": 1,
       "wallets": [
         "J1ZoDuhi2S1GweyJuekU9JEJeFham248FAVZJWamTz6F"
-      ]
+      ],
+      "marketCap": 478090,
+      "liquidityUsd": 16368.75,
+      "volume24h": 38397.58,
+      "txns24h": 1279,
+      "tokenAgeHours": 9104.649078611112
     },
     {
       "entityName": "Tux | DCDAO",
@@ -2144,7 +2909,12 @@
       "walletCount": 1,
       "wallets": [
         "J1ZoDuhi2S1GweyJuekU9JEJeFham248FAVZJWamTz6F"
-      ]
+      ],
+      "marketCap": 74865003782,
+      "liquidityUsd": 3788385.87,
+      "volume24h": 1128444.33,
+      "txns24h": 2151,
+      "tokenAgeHours": 16077.566935277779
     },
     {
       "entityName": "uga2vegas (research)",
@@ -2158,7 +2928,12 @@
       "walletCount": 1,
       "wallets": [
         "zczyNknQCTwCeiAo9QekT3wwJbaW6NUZmbPnJsFk6B1"
-      ]
+      ],
+      "marketCap": 129110096,
+      "liquidityUsd": 5705029.44,
+      "volume24h": 3708842.5,
+      "txns24h": 7802,
+      "tokenAgeHours": 14540.763974722222
     },
     {
       "entityName": "uga2vegas (research)",
@@ -2172,7 +2947,12 @@
       "walletCount": 1,
       "wallets": [
         "zczyNknQCTwCeiAo9QekT3wwJbaW6NUZmbPnJsFk6B1"
-      ]
+      ],
+      "marketCap": 908033665,
+      "liquidityUsd": 540557.17,
+      "volume24h": 313250.06,
+      "txns24h": 1894,
+      "tokenAgeHours": 16077.48667361111
     },
     {
       "entityName": "uga2vegas (research)",
@@ -2186,7 +2966,12 @@
       "walletCount": 1,
       "wallets": [
         "zczyNknQCTwCeiAo9QekT3wwJbaW6NUZmbPnJsFk6B1"
-      ]
+      ],
+      "marketCap": 71978293,
+      "liquidityUsd": 3080735.97,
+      "volume24h": 1694575.71,
+      "txns24h": 4547,
+      "tokenAgeHours": 10112.420006944445
     },
     {
       "entityName": "uga2vegas (research)",
@@ -2200,7 +2985,12 @@
       "walletCount": 1,
       "wallets": [
         "zczyNknQCTwCeiAo9QekT3wwJbaW6NUZmbPnJsFk6B1"
-      ]
+      ],
+      "marketCap": 74865003782,
+      "liquidityUsd": 3788385.87,
+      "volume24h": 1128444.33,
+      "txns24h": 2151,
+      "tokenAgeHours": 16077.566935277779
     },
     {
       "entityName": "uga2vegas (research)",
@@ -2214,7 +3004,12 @@
       "walletCount": 1,
       "wallets": [
         "zczyNknQCTwCeiAo9QekT3wwJbaW6NUZmbPnJsFk6B1"
-      ]
+      ],
+      "marketCap": 22905297,
+      "liquidityUsd": 72152.26,
+      "volume24h": 252920.61,
+      "txns24h": 6506,
+      "tokenAgeHours": 5484.840919166667
     },
     {
       "entityName": "uga2vegas (research)",
@@ -2228,7 +3023,12 @@
       "walletCount": 1,
       "wallets": [
         "zczyNknQCTwCeiAo9QekT3wwJbaW6NUZmbPnJsFk6B1"
-      ]
+      ],
+      "marketCap": 67799131,
+      "liquidityUsd": 63020.18,
+      "volume24h": 399394.01,
+      "txns24h": 8564,
+      "tokenAgeHours": 5419.108046388889
     },
     {
       "entityName": "uga2vegas (research)",
@@ -2242,7 +3042,12 @@
       "walletCount": 1,
       "wallets": [
         "zczyNknQCTwCeiAo9QekT3wwJbaW6NUZmbPnJsFk6B1"
-      ]
+      ],
+      "marketCap": 13943347,
+      "liquidityUsd": 1332998.53,
+      "volume24h": 115327.62,
+      "txns24h": 972,
+      "tokenAgeHours": 13083.125840277778
     },
     {
       "entityName": "uga2vegas (research)",
@@ -2256,7 +3061,12 @@
       "walletCount": 1,
       "wallets": [
         "zczyNknQCTwCeiAo9QekT3wwJbaW6NUZmbPnJsFk6B1"
-      ]
+      ],
+      "marketCap": 5231796,
+      "liquidityUsd": 736327.59,
+      "volume24h": 111028.38,
+      "txns24h": 434,
+      "tokenAgeHours": 10019.820006944445
     },
     {
       "entityName": "uga2vegas (research)",
@@ -2270,7 +3080,12 @@
       "walletCount": 1,
       "wallets": [
         "zczyNknQCTwCeiAo9QekT3wwJbaW6NUZmbPnJsFk6B1"
-      ]
+      ],
+      "marketCap": 3767147,
+      "liquidityUsd": 25050.97,
+      "volume24h": 6492.87,
+      "txns24h": 653,
+      "tokenAgeHours": 18983.016118055555
     },
     {
       "entityName": "uga2vegas (research)",
@@ -2284,7 +3099,12 @@
       "walletCount": 1,
       "wallets": [
         "zczyNknQCTwCeiAo9QekT3wwJbaW6NUZmbPnJsFk6B1"
-      ]
+      ],
+      "marketCap": 86900493,
+      "liquidityUsd": 1104889.23,
+      "volume24h": 5684.86,
+      "txns24h": 8628,
+      "tokenAgeHours": 14728.645284722223
     },
     {
       "entityName": "Vương MC",
@@ -2298,7 +3118,12 @@
       "walletCount": 1,
       "wallets": [
         "C2F2oSr5koEeRg7XspS4Fudv2UkfGjHttNv1oLhooEh8"
-      ]
+      ],
+      "marketCap": 483839,
+      "liquidityUsd": 64143.24,
+      "volume24h": 105381.4,
+      "txns24h": 1082,
+      "tokenAgeHours": 277.7350069444444
     },
     {
       "entityName": "Watchandlearn (@princebtc28)",
@@ -2312,7 +3137,12 @@
       "walletCount": 1,
       "wallets": [
         "B8y9cvQbz3oBiuPX6h33WVovd3qvKmqWMu9Uy86sHQkk"
-      ]
+      ],
+      "marketCap": 6032597,
+      "liquidityUsd": 137340.67,
+      "volume24h": 32790.76,
+      "txns24h": 108,
+      "tokenAgeHours": 5172.1030625
     },
     {
       "entityName": "y22",
@@ -2326,7 +3156,12 @@
       "walletCount": 1,
       "wallets": [
         "GgG65z3MXpmGnV3ZapKv5ayDqox1x7CJnqP1LD8FaZdt"
-      ]
+      ],
+      "marketCap": 74865003782,
+      "liquidityUsd": 3788385.87,
+      "volume24h": 1128444.33,
+      "txns24h": 2151,
+      "tokenAgeHours": 16077.566935277779
     },
     {
       "entityName": "Zinceth",
@@ -2340,7 +3175,12 @@
       "walletCount": 1,
       "wallets": [
         "HQdFfmiDrZGbxqE5k5CqDxUkLUHhCUS39YHqsRGsfzeH"
-      ]
+      ],
+      "marketCap": 242113,
+      "liquidityUsd": 48977.49,
+      "volume24h": 7805.23,
+      "txns24h": 177,
+      "tokenAgeHours": 3398.6000069444444
     },
     {
       "entityName": "Zinceth",
@@ -2354,7 +3194,12 @@
       "walletCount": 1,
       "wallets": [
         "HQdFfmiDrZGbxqE5k5CqDxUkLUHhCUS39YHqsRGsfzeH"
-      ]
+      ],
+      "marketCap": 74865003782,
+      "liquidityUsd": 3788385.87,
+      "volume24h": 1128444.33,
+      "txns24h": 2151,
+      "tokenAgeHours": 16077.566935277779
     },
     {
       "entityName": "Zinceth",
@@ -2368,7 +3213,12 @@
       "walletCount": 1,
       "wallets": [
         "HQdFfmiDrZGbxqE5k5CqDxUkLUHhCUS39YHqsRGsfzeH"
-      ]
+      ],
+      "marketCap": 23100,
+      "liquidityUsd": 16858.6,
+      "volume24h": 397.25,
+      "txns24h": 30,
+      "tokenAgeHours": 1520.0280625
     }
   ],
   "walletEvidence": [
@@ -4474,5 +5324,15 @@
       "balance": "7594085.58"
     }
   ],
-  "errors": []
+  "errors": [],
+  "enrichedAt": "2026-06-16T02:56:28.753Z",
+  "enrichment": {
+    "marketDataSource": "dexscreener",
+    "moniSource": "discover.getmoni.io",
+    "uniqueTokens": 120,
+    "marketDataRows": 118,
+    "twitterHandleRows": 95,
+    "moniRows": 0,
+    "moniLimit": 12
+  }
 }

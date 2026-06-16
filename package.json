@@ -8,7 +8,8 @@
     "dev": "ts-node src/server.ts",
     "test": "node --test -r ts-node/register src/*.test.ts",
     "migrate:sqlite-to-postgres": "ts-node scripts/migrate-sqlite-to-postgres.ts",
-    "solscan:top-holdings": "ts-node scripts/solscan-top-holdings.ts"
+    "solscan:top-holdings": "ts-node scripts/solscan-top-holdings.ts",
+    "solscan:enrich-latest": "ts-node scripts/enrich-solscan-latest.ts"
   },
   "dependencies": {
     "@vercel/functions": "^3.4.3",
