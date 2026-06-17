@@ -258,13 +258,14 @@ async function enrichSnapshotMoniScores(options: {
         throw error;
       }
       const reusedForGroup = await reusePriorMoniScores(candidates);
+      if (reusedForGroup > 0) {
+        return;
+      }
       const message = error instanceof Error ? error.message : String(error);
       emitLog(
         options.callbacks,
-        reusedForGroup > 0 ? "info" : "warning",
-        reusedForGroup > 0
-          ? `Moni Score refresh reused prior score for ${reusedForGroup}/${candidates.length} token(s) after @${handle}: ${message}`
-          : `Moni Score lookup skipped for @${handle}: ${message}`,
+        "warning",
+        `Moni Score lookup skipped for @${handle}: ${message}`,
       );
     }
   };
