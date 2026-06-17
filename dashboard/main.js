@@ -954,7 +954,12 @@ function renderTable() {
 async function loadSnapshots() {
   const payload = await fetchJson("/api/snapshots");
   state.snapshots = Array.isArray(payload.snapshots) ? payload.snapshots : [];
-  if (!state.selectedSnapshotId && payload.latest?.id) {
+
+  const selectedSnapshot = state.snapshots.find((item) => item.id === state.selectedSnapshotId) || null;
+  const selectedSnapshotIsEmptyFailure =
+    selectedSnapshot?.status === "failed" && Number(selectedSnapshot.totalRows || 0) === 0;
+
+  if ((!state.selectedSnapshotId || !selectedSnapshot || selectedSnapshotIsEmptyFailure) && payload.latest?.id) {
     state.selectedSnapshotId = payload.latest.id;
   }
   renderSnapshots();
