@@ -117,3 +117,48 @@ test("getOverview reuses the latest prior Moni score when the current snapshot i
     fs.rmSync(cwd, { recursive: true, force: true });
   }
 });
+
+test("replaceEntities updates an existing named entity when its Zapper bundle link changes", async () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "dex-storage-test-"));
+  const previousDatabaseUrl = process.env.DATABASE_URL;
+  delete process.env.DATABASE_URL;
+
+  const storage = createStorage(cwd);
+  try {
+    await storage.replaceEntities([
+      {
+        entityName: "0xUnihaxor",
+        fullZapperLink: "https://zapper.xyz/bundle/0xold?label=0xunihaxor",
+        resolvedLabel: "0xunihaxor",
+        linkType: "bundle",
+        walletAddresses: ["0xold"],
+      },
+    ]);
+    await storage.replaceEntities([
+      {
+        entityName: "0xUnihaxor",
+        fullZapperLink: "https://zapper.xyz/bundle/0xnew,So11111111111111111111111111111111111111112?label=0xunihaxor",
+        resolvedLabel: "0xunihaxor",
+        linkType: "bundle",
+        walletAddresses: ["0xnew", "So11111111111111111111111111111111111111112"],
+      },
+    ]);
+
+    const entities = await storage.getEntities();
+    const matches = entities.filter((entity) => entity.entityName === "0xUnihaxor");
+    assert.equal(matches.length, 1);
+    assert.equal(matches[0].fullZapperLink.includes("0xnew"), true);
+    assert.deepEqual(
+      matches[0].wallets.map((wallet) => wallet.walletAddress),
+      ["0xnew", "So11111111111111111111111111111111111111112"],
+    );
+  } finally {
+    await storage.close();
+    if (previousDatabaseUrl == null) {
+      delete process.env.DATABASE_URL;
+    } else {
+      process.env.DATABASE_URL = previousDatabaseUrl;
+    }
+    fs.rmSync(cwd, { recursive: true, force: true });
+  }
+});

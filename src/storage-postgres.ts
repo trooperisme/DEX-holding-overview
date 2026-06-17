@@ -127,18 +127,49 @@ export function createPostgresStorage(): StorageAdapter {
       await withTransaction(async (client) => {
         const now = new Date().toISOString();
         for (const entity of entities) {
-          const result = await client.query<{ id: string }>(
-            `INSERT INTO ${table("entities")} (
-               entity_name, full_zapper_link, resolved_label, link_type, created_at, updated_at
-             ) VALUES ($1, $2, $3, $4, $5, $5)
-             ON CONFLICT (full_zapper_link) DO UPDATE SET
-               entity_name = EXCLUDED.entity_name,
-               resolved_label = EXCLUDED.resolved_label,
-               link_type = EXCLUDED.link_type,
-               updated_at = EXCLUDED.updated_at
-             RETURNING id`,
-            [entity.entityName, entity.fullZapperLink, entity.resolvedLabel, entity.linkType, now],
+          const existing = await client.query<{ id: string }>(
+            `SELECT id
+             FROM ${table("entities")}
+             WHERE full_zapper_link = $2
+                OR lower(entity_name) = lower($1)
+             ORDER BY
+               CASE WHEN full_zapper_link = $2 THEN 0 ELSE 1 END,
+               updated_at DESC,
+               id DESC
+             LIMIT 1`,
+            [entity.entityName, entity.fullZapperLink],
           );
+          const result = existing.rows[0]
+            ? await client.query<{ id: string }>(
+                `UPDATE ${table("entities")}
+                 SET entity_name = $1,
+                     full_zapper_link = $2,
+                     resolved_label = $3,
+                     link_type = $4,
+                     updated_at = $5
+                 WHERE id = $6
+                 RETURNING id`,
+                [
+                  entity.entityName,
+                  entity.fullZapperLink,
+                  entity.resolvedLabel,
+                  entity.linkType,
+                  now,
+                  existing.rows[0].id,
+                ],
+              )
+            : await client.query<{ id: string }>(
+                `INSERT INTO ${table("entities")} (
+                   entity_name, full_zapper_link, resolved_label, link_type, created_at, updated_at
+                 ) VALUES ($1, $2, $3, $4, $5, $5)
+                 ON CONFLICT (full_zapper_link) DO UPDATE SET
+                   entity_name = EXCLUDED.entity_name,
+                   resolved_label = EXCLUDED.resolved_label,
+                   link_type = EXCLUDED.link_type,
+                   updated_at = EXCLUDED.updated_at
+                 RETURNING id`,
+                [entity.entityName, entity.fullZapperLink, entity.resolvedLabel, entity.linkType, now],
+              );
           const entityId = Number(result.rows[0].id);
           await client.query(`DELETE FROM ${table("entity_wallets")} WHERE entity_id = $1`, [entityId]);
 
@@ -156,9 +187,10 @@ export function createPostgresStorage(): StorageAdapter {
 
     async getEntities(): Promise<Array<EntityRecord & { wallets: EntityWalletRecord[] }>> {
       const entitiesResult = await getPool().query(
-        `SELECT id, entity_name, full_zapper_link, resolved_label, link_type, created_at, updated_at
+        `SELECT DISTINCT ON (lower(entity_name))
+           id, entity_name, full_zapper_link, resolved_label, link_type, created_at, updated_at
          FROM ${table("entities")}
-         ORDER BY entity_name ASC`,
+         ORDER BY lower(entity_name), updated_at DESC, id DESC`,
       );
       const entities = entitiesResult.rows.map(mapEntity);
       if (!entities.length) return [];

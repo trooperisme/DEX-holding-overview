@@ -150,6 +150,26 @@ function createSqliteStorage(cwd: string): StorageAdapter {
     RETURNING id
   `);
 
+  const findEntityForImport = db.prepare(`
+    SELECT id
+    FROM entities
+    WHERE full_zapper_link = @fullZapperLink
+       OR lower(entity_name) = lower(@entityName)
+    ORDER BY
+      CASE WHEN full_zapper_link = @fullZapperLink THEN 0 ELSE 1 END,
+      datetime(updated_at) DESC,
+      id DESC
+    LIMIT 1
+  `);
+  const updateEntityForImport = db.prepare(`
+    UPDATE entities
+    SET entity_name = @entityName,
+        full_zapper_link = @fullZapperLink,
+        resolved_label = @resolvedLabel,
+        link_type = @linkType,
+        updated_at = @updatedAt
+    WHERE id = @id
+  `);
   const clearWalletsForEntity = db.prepare(`DELETE FROM entity_wallets WHERE entity_id = ?`);
   const insertWallet = db.prepare(`
     INSERT INTO entity_wallets (entity_id, wallet_address, wallet_index, created_at)
@@ -254,14 +274,29 @@ function createSqliteStorage(cwd: string): StorageAdapter {
   const replaceEntities = db.transaction((entities: ImportedEntity[]) => {
     const now = new Date().toISOString();
     for (const entity of entities) {
-      const result = upsertEntity.get({
+      const existing = findEntityForImport.get({
+        entityName: entity.entityName,
+        fullZapperLink: entity.fullZapperLink,
+      }) as { id: number } | undefined;
+      const result = existing || (upsertEntity.get({
         entityName: entity.entityName,
         fullZapperLink: entity.fullZapperLink,
         resolvedLabel: entity.resolvedLabel,
         linkType: entity.linkType,
         createdAt: now,
         updatedAt: now,
-      }) as { id: number };
+      }) as { id: number });
+
+      if (existing) {
+        updateEntityForImport.run({
+          id: existing.id,
+          entityName: entity.entityName,
+          fullZapperLink: entity.fullZapperLink,
+          resolvedLabel: entity.resolvedLabel,
+          linkType: entity.linkType,
+          updatedAt: now,
+        });
+      }
 
       clearWalletsForEntity.run(result.id);
       entity.walletAddresses.forEach((walletAddress, walletIndex) => {
@@ -296,6 +331,11 @@ function createSqliteStorage(cwd: string): StorageAdapter {
                   resolved_label as resolvedLabel, link_type as linkType,
                   created_at as createdAt, updated_at as updatedAt
            FROM entities
+           WHERE id IN (
+             SELECT MAX(id)
+             FROM entities
+             GROUP BY lower(entity_name)
+           )
            ORDER BY entity_name COLLATE NOCASE ASC`,
         )
         .all() as EntityRecord[];
