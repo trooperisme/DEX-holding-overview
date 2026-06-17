@@ -130,6 +130,10 @@ type SolscanMarketDataCache = {
 
 let solscanMarketDataCache: SolscanMarketDataCache | null = null;
 
+function shouldUseSolscanFileOverride(): boolean {
+  return process.env.ENABLE_SOLSCAN_FILE_OVERRIDES === "1";
+}
+
 function normalizeSolanaTokenKey(tokenAddress: string): string {
   return `${SOLANA_CHAIN_ID}:${tokenAddress.toLowerCase()}`;
 }
@@ -574,18 +578,21 @@ app.get("/api/overview", async (req, res) => {
   const storage = createStorage(cwd);
   try {
     const zapperRows = await storage.getOverview(snapshotId, minBalanceUsd, minSmwIn, minLiquidityUsd, maxMarketCapUsd);
-    const solscanPayload = readSolscanLatestPayload();
-    const solscanRows = await enrichSolscanOverviewRows(buildSolscanOverviewRows({
-      payload: solscanPayload,
-      minBalanceUsd,
-      minSmwIn,
-      maxMarketCapUsd,
-      blacklist: await storage.getBlacklist(),
-    }), solscanPayload);
-    const filteredSolscanRows = applySolscanMarketFilters(solscanRows, minLiquidityUsd, maxMarketCapUsd);
-    const rows = solscanRows.length
-      ? [...zapperRows.filter((row) => !isSolanaOverviewRow(row)), ...filteredSolscanRows]
-      : zapperRows;
+    let rows = zapperRows;
+    if (shouldUseSolscanFileOverride()) {
+      const solscanPayload = readSolscanLatestPayload();
+      const solscanRows = await enrichSolscanOverviewRows(buildSolscanOverviewRows({
+        payload: solscanPayload,
+        minBalanceUsd,
+        minSmwIn,
+        maxMarketCapUsd,
+        blacklist: await storage.getBlacklist(),
+      }), solscanPayload);
+      const filteredSolscanRows = applySolscanMarketFilters(solscanRows, minLiquidityUsd, maxMarketCapUsd);
+      rows = solscanRows.length
+        ? [...zapperRows.filter((row) => !isSolanaOverviewRow(row)), ...filteredSolscanRows]
+        : zapperRows;
+    }
 
     res.json({
       rows: rows
@@ -610,17 +617,19 @@ app.get("/api/token-holders", async (req, res) => {
 
   const storage = createStorage(cwd);
   try {
-    const solscanRows = buildSolscanOverviewRows({
-      payload: readSolscanLatestPayload(),
-      minBalanceUsd,
-      minSmwIn: 1,
-      maxMarketCapUsd: null,
-      blacklist: await storage.getBlacklist(),
-    });
-    const solscanRow = getSolscanRowsByTokenKey(solscanRows).get(tokenKey);
-    if (solscanRow) {
-      res.json({ rows: solscanRow.solscanHolders });
-      return;
+    if (shouldUseSolscanFileOverride()) {
+      const solscanRows = buildSolscanOverviewRows({
+        payload: readSolscanLatestPayload(),
+        minBalanceUsd,
+        minSmwIn: 1,
+        maxMarketCapUsd: null,
+        blacklist: await storage.getBlacklist(),
+      });
+      const solscanRow = getSolscanRowsByTokenKey(solscanRows).get(tokenKey);
+      if (solscanRow) {
+        res.json({ rows: solscanRow.solscanHolders });
+        return;
+      }
     }
 
     res.json({

@@ -7,6 +7,7 @@ import { loadImportedEntities, maskApiKey, toTokenKey } from "./entities";
 import { fetchMoniScoreDataForToken, getMoniLookupTimeoutMs } from "./moni";
 import { resolveWorkspacePaths } from "./runtime-paths";
 import { createStorage } from "./storage";
+import { fetchSolscanTopTokenBalances, SOLANA_CHAIN_ID } from "./solscan";
 import { fetchZapperTokenBalances } from "./zapper";
 import {
   RawHoldingRecord,
@@ -15,6 +16,7 @@ import {
   RefreshProgressState,
   RefreshResult,
   SnapshotStatus,
+  ZapperTokenBalance,
 } from "./types";
 
 type RefreshCallbacks = {
@@ -64,6 +66,99 @@ function getMoniConcurrency(totalHandles: number): number {
   const configured = Number(process.env.MONI_REFRESH_CONCURRENCY || (process.env.VERCEL ? 4 : 2));
   const concurrency = Number.isFinite(configured) ? Math.trunc(configured) : 1;
   return Math.max(1, Math.min(totalHandles, concurrency));
+}
+
+const SOLANA_WALLET_RE = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
+
+function isSolanaWalletAddress(address: string): boolean {
+  return !address.startsWith("0x") && SOLANA_WALLET_RE.test(address);
+}
+
+function isSolanaTokenBalance(holding: ZapperTokenBalance): boolean {
+  return holding.chainId === SOLANA_CHAIN_ID || holding.networkName.toLowerCase() === "solana";
+}
+
+function addDecimalStrings(left: string, right: string): string {
+  const sum = Number(left || 0) + Number(right || 0);
+  return Number.isFinite(sum) ? String(sum) : left;
+}
+
+function aggregateTokenBalancesByKey(balances: ZapperTokenBalance[]): ZapperTokenBalance[] {
+  const byTokenKey = new Map<string, ZapperTokenBalance>();
+
+  for (const balance of balances) {
+    const key = toTokenKey(balance);
+    const existing = byTokenKey.get(key);
+    if (!existing) {
+      byTokenKey.set(key, { ...balance });
+      continue;
+    }
+
+    existing.balance = addDecimalStrings(existing.balance, balance.balance);
+    existing.balanceRaw = addDecimalStrings(existing.balanceRaw, balance.balanceRaw);
+    existing.balanceUsd += balance.balanceUsd;
+    existing.price ??= balance.price;
+    existing.marketCap ??= balance.marketCap;
+    existing.liquidityUsd ??= balance.liquidityUsd;
+    existing.volume24h ??= balance.volume24h;
+    existing.txns24h ??= balance.txns24h;
+    existing.tokenAgeHours ??= balance.tokenAgeHours;
+    existing.moniScore ??= balance.moniScore;
+    existing.moniLevel ??= balance.moniLevel;
+    existing.moniLevelName ??= balance.moniLevelName;
+    existing.moniMomentumScorePct ??= balance.moniMomentumScorePct;
+    existing.moniMomentumRank ??= balance.moniMomentumRank;
+  }
+
+  return Array.from(byTokenKey.values()).map((balance) => ({
+    ...balance,
+    balanceUsd: Math.round(balance.balanceUsd * 100) / 100,
+  }));
+}
+
+async function fetchSolscanEntityBalances(options: {
+  firecrawlApiKey: string;
+  walletAddresses: string[];
+  minBalanceUsd: number;
+  signal?: AbortSignal;
+}): Promise<{
+  balances: ZapperTokenBalance[];
+  walletsAttempted: number;
+  walletsSucceeded: number;
+  walletsFailed: number;
+  errors: string[];
+}> {
+  const balances: ZapperTokenBalance[] = [];
+  const errors: string[] = [];
+  let walletsSucceeded = 0;
+  let walletsFailed = 0;
+
+  for (const walletAddress of options.walletAddresses) {
+    if (options.signal?.aborted) {
+      throw new DOMException("Refresh canceled", "AbortError");
+    }
+
+    try {
+      const result = await fetchSolscanTopTokenBalances(options.firecrawlApiKey, walletAddress, {
+        minBalanceUsd: options.minBalanceUsd,
+        signal: options.signal,
+      });
+      balances.push(...result.balances);
+      walletsSucceeded += 1;
+    } catch (error) {
+      if (isAbortError(error)) throw error;
+      walletsFailed += 1;
+      errors.push(`${walletAddress}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  return {
+    balances: aggregateTokenBalancesByKey(balances),
+    walletsAttempted: options.walletAddresses.length,
+    walletsSucceeded,
+    walletsFailed,
+    errors,
+  };
 }
 
 async function enrichSnapshotMarketData(options: {
@@ -312,6 +407,8 @@ export async function runDexRefresh(options: {
   let aborted = false;
   let enrichmentFailed = 0;
   const failureReasons = new Map<string, number>();
+  const firecrawlApiKey = process.env.FIRECRAWL_API_KEY?.trim();
+  const solscanMinBalanceUsd = Number(process.env.SOLSCAN_MIN_BALANCE_USD || 111);
 
   const throwIfAborted = (): void => {
     if (signal?.aborted) {
@@ -378,8 +475,46 @@ export async function runDexRefresh(options: {
 
         throwIfAborted();
 
+        let balances = result.balances;
+        const solanaWalletAddresses = entity.wallets
+          .map((wallet) => wallet.walletAddress)
+          .filter(isSolanaWalletAddress);
+
+        if (firecrawlApiKey && solanaWalletAddresses.length > 0) {
+          const solscanResult = await fetchSolscanEntityBalances({
+            firecrawlApiKey,
+            walletAddresses: solanaWalletAddresses,
+            minBalanceUsd: solscanMinBalanceUsd,
+            signal,
+          });
+
+          if (solscanResult.walletsSucceeded > 0) {
+            balances = [
+              ...result.balances.filter((holding) => !isSolanaTokenBalance(holding)),
+              ...solscanResult.balances,
+            ];
+            emitLog(
+              callbacks,
+              solscanResult.walletsFailed > 0 ? "warning" : "info",
+              `Solscan override for ${entityLabel}: ${solscanResult.walletsSucceeded}/${solscanResult.walletsAttempted} Solana wallet(s), ${solscanResult.balances.length} token row(s).`,
+            );
+          } else if (solscanResult.walletsAttempted > 0) {
+            emitLog(
+              callbacks,
+              "warning",
+              `Solscan override skipped for ${entityLabel}: all ${solscanResult.walletsAttempted} Solana wallet scrape(s) failed; keeping Zapper Solana rows.`,
+            );
+          }
+
+          for (const error of solscanResult.errors.slice(0, 3)) {
+            emitLog(callbacks, "warning", `Solscan scrape issue for ${entityLabel}: ${error}`);
+          }
+        } else if (!firecrawlApiKey && solanaWalletAddresses.length > 0) {
+          emitLog(callbacks, "warning", `Solscan override skipped for ${entityLabel}: FIRECRAWL_API_KEY is not configured.`);
+        }
+
         const fetchedAt = new Date().toISOString();
-        const rows: RawHoldingRecord[] = result.balances.map((holding) => ({
+        const rows: RawHoldingRecord[] = balances.map((holding) => ({
           snapshotId,
           entityId: entity.id,
           tokenKey: toTokenKey(holding),
@@ -408,10 +543,11 @@ export async function runDexRefresh(options: {
         await storage.insertRawHoldingsForEntity(snapshotId, entity.id, rows);
         entitiesCompleted += 1;
         totalRows += rows.length;
+        const totalBalanceUsd = rows.reduce((sum, row) => sum + row.balanceUsd, 0);
         await storage.updateEntityFetchRun(runId, {
           status: "success",
           rowsFound: rows.length,
-          totalBalanceUsd: result.totalBalanceUsd,
+          totalBalanceUsd,
           errorMessage: null,
           finishedAt: new Date().toISOString(),
         });
@@ -435,7 +571,7 @@ export async function runDexRefresh(options: {
         emitLog(
           callbacks,
           "success",
-          `Completed ${entityLabel}: ${rows.length} token rows, ${result.totalBalanceUsd.toLocaleString("en-US", {
+          `Completed ${entityLabel}: ${rows.length} token rows, ${totalBalanceUsd.toLocaleString("en-US", {
             style: "currency",
             currency: "USD",
             maximumFractionDigits: 2,
