@@ -441,6 +441,14 @@ function incompleteSnapshotStatus(snapshot: SnapshotRecord): SnapshotStatus {
   return snapshot.entitiesCompleted > 0 || snapshot.totalRows > 0 ? "partial" : "failed";
 }
 
+function isUsableSnapshot(snapshot: SnapshotRecord): boolean {
+  return (snapshot.status === "success" || snapshot.status === "partial") && snapshot.totalRows > 0;
+}
+
+function getLatestUsableSnapshot(snapshots: SnapshotRecord[]): SnapshotRecord | null {
+  return snapshots.find(isUsableSnapshot) || snapshots[0] || null;
+}
+
 function snapshotToRefreshJob(snapshot: SnapshotRecord) {
   const status = snapshot.status;
   const running = status === "running";
@@ -513,7 +521,7 @@ async function reconcileSnapshots(storage: ReturnType<typeof createStorage>, has
 
   return {
     snapshots,
-    latest: snapshots[0] || null,
+    latest: getLatestUsableSnapshot(snapshots),
     runningSnapshot: snapshots.find((snapshot) => snapshot.status === "running") || null,
   };
 }
