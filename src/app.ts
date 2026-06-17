@@ -25,7 +25,6 @@ const app = express();
 const cwd = process.cwd();
 const paths = resolveWorkspacePaths(cwd);
 const refreshJobs = createRefreshJobManager(cwd);
-const STALE_REFRESH_AFTER_MS = Number(process.env.REFRESH_STALE_AFTER_MS || (process.env.VERCEL ? 330_000 : 1_800_000));
 
 app.disable("x-powered-by");
 app.set("trust proxy", 1);
@@ -438,13 +437,6 @@ function stripSolscanHolders(row: TokenOverviewRow | SolscanOverviewRow): TokenO
   return overviewRow;
 }
 
-function isStaleRunningSnapshot(snapshot: SnapshotRecord): boolean {
-  if (snapshot.status !== "running") return false;
-  const createdAtMs = new Date(snapshot.createdAt).getTime();
-  if (!Number.isFinite(createdAtMs)) return false;
-  return Date.now() - createdAtMs > STALE_REFRESH_AFTER_MS;
-}
-
 function incompleteSnapshotStatus(snapshot: SnapshotRecord): SnapshotStatus {
   return snapshot.entitiesCompleted > 0 || snapshot.totalRows > 0 ? "partial" : "failed";
 }
@@ -498,23 +490,23 @@ function snapshotToRefreshJob(snapshot: SnapshotRecord) {
 async function reconcileSnapshots(storage: ReturnType<typeof createStorage>, hasInMemoryJob: boolean) {
   let snapshots = await storage.getSnapshotSummaries();
   if (!hasInMemoryJob) {
-    const staleRunningSnapshots = snapshots.filter(isStaleRunningSnapshot);
-    for (const snapshot of staleRunningSnapshots) {
+    const incompleteRunningSnapshots = snapshots.filter((snapshot) => snapshot.status === "running");
+    for (const snapshot of incompleteRunningSnapshots) {
       const status = incompleteSnapshotStatus(snapshot);
       await storage.updateSnapshot({
         id: snapshot.id,
         status,
         errorMessage:
           status === "partial"
-            ? "Refresh stopped before all entities completed. Showing partial results."
-            : "Refresh stopped before any entity completed.",
+            ? "Refresh process stopped before all entities completed. Showing partial results."
+            : "Refresh process stopped before any entity completed.",
         finishedAt: new Date().toISOString(),
         entitiesCompleted: snapshot.entitiesCompleted,
         entitiesFailed: Math.max(snapshot.entitiesFailed, snapshot.totalEntities - snapshot.entitiesCompleted),
         totalRows: snapshot.totalRows,
       });
     }
-    if (staleRunningSnapshots.length) {
+    if (incompleteRunningSnapshots.length) {
       snapshots = await storage.getSnapshotSummaries();
     }
   }
