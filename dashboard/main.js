@@ -926,7 +926,7 @@ function renderTable() {
           <td>
             <div class="token-cell">
               <strong>${escapeHtml(row.tokenName)}</strong>
-              <span>Click to view entity holders</span>
+              <span>Click to view score trend and entity holders</span>
             </div>
           </td>
           <td class="metric-cell">${buildMetricCell(row.score, scoreMax, fmtScore)}</td>
@@ -1170,7 +1170,7 @@ document.addEventListener("click", async (event) => {
     const tokenChanged = nextOpenTokenKey && nextOpenTokenKey !== state.openTokenKey;
     state.openTokenKey = nextOpenTokenKey;
     if (tokenChanged) {
-      state.activeDrilldownTab = "holders";
+      state.activeDrilldownTab = "trend";
     }
     renderTable();
     if (state.openTokenKey === tokenKey) {
