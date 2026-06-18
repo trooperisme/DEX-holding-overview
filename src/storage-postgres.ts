@@ -485,20 +485,34 @@ export function createPostgresStorage(): StorageAdapter {
 
     async getSnapshotTokensForEnrichment(snapshotId: number, minBalanceUsd = 111, minSmwIn = 1): Promise<SnapshotTokenForEnrichment[]> {
       const result = await getPool().query(
-        `SELECT
-            rh.token_key,
-            MAX(rh.token_symbol) as token_symbol,
-            MAX(rh.token_name) as token_name,
-            MAX(rh.token_address) as token_address,
-            MAX(rh.network_name) as network_name,
-            MAX(rh.chain_id) as chain_id,
-            COUNT(DISTINCT rh.entity_id) as smw_in,
-            ROUND(SUM(rh.balance_usd), 2) as holdings_usd
-         FROM ${table("raw_holdings")} rh
-         WHERE rh.snapshot_id = $1
-           AND rh.balance_usd >= $2
-         GROUP BY rh.token_key
-         HAVING COUNT(DISTINCT rh.entity_id) >= $3
+        `WITH canonical_holdings AS (
+           SELECT
+             rh.token_key,
+             lower(e.entity_name) as entity_key,
+             MAX(rh.token_symbol) as token_symbol,
+             MAX(rh.token_name) as token_name,
+             MAX(rh.token_address) as token_address,
+             MAX(rh.network_name) as network_name,
+             MAX(rh.chain_id) as chain_id,
+             MAX(rh.balance_usd) as balance_usd
+           FROM ${table("raw_holdings")} rh
+           INNER JOIN ${table("entities")} e ON e.id = rh.entity_id
+           WHERE rh.snapshot_id = $1
+             AND rh.balance_usd >= $2
+           GROUP BY rh.token_key, lower(e.entity_name)
+         )
+         SELECT
+            token_key,
+            MAX(token_symbol) as token_symbol,
+            MAX(token_name) as token_name,
+            MAX(token_address) as token_address,
+            MAX(network_name) as network_name,
+            MAX(chain_id) as chain_id,
+            COUNT(*) as smw_in,
+            ROUND(SUM(balance_usd)::numeric, 2) as holdings_usd
+         FROM canonical_holdings
+         GROUP BY token_key
+         HAVING COUNT(*) >= $3
          ORDER BY smw_in DESC, holdings_usd DESC, token_symbol ASC`,
         [snapshotId, minBalanceUsd, minSmwIn],
       );
@@ -523,23 +537,93 @@ export function createPostgresStorage(): StorageAdapter {
       maxMarketCapUsd: number | null = null,
     ): Promise<TokenOverviewRow[]> {
       const result = await getPool().query(
-        `SELECT
-            rh.token_key,
-            MAX(rh.token_symbol) as token_symbol,
-            MAX(rh.token_name) as token_name,
-            MAX(rh.network_name) as network_name,
-            MAX(rh.chain_id) as chain_id,
-            MAX(rh.token_address) as token_address,
-            ROUND(SUM(rh.balance_usd), 2) as holdings_usd,
-            COUNT(DISTINCT rh.entity_id) as smw_in,
-            MAX(rh.market_cap) as market_cap,
-            MAX(rh.token_age_hours) as token_age_hours,
+        `WITH canonical_holdings AS (
+           SELECT
+             rh.token_key,
+             lower(e.entity_name) as entity_key,
+             MAX(rh.token_symbol) as token_symbol,
+             MAX(rh.token_name) as token_name,
+             MAX(rh.network_name) as network_name,
+             MAX(rh.chain_id) as chain_id,
+             MAX(rh.token_address) as token_address,
+             MAX(rh.balance_usd) as balance_usd,
+             MAX(rh.market_cap) as market_cap,
+             MAX(rh.token_age_hours) as token_age_hours,
+             MAX(rh.moni_score) as moni_score,
+             MAX(rh.moni_level) as moni_level,
+             MAX(rh.moni_level_name) as moni_level_name,
+             MAX(rh.moni_momentum_score_pct) as moni_momentum_score_pct,
+             MAX(rh.moni_momentum_rank) as moni_momentum_rank,
+             MAX(rh.volume_24h) as volume_24h,
+             MAX(rh.txns_24h) as txns_24h,
+             MAX(rh.liquidity_usd) as liquidity_usd
+           FROM ${table("raw_holdings")} rh
+           INNER JOIN ${table("entities")} e ON e.id = rh.entity_id
+           LEFT JOIN ${table("token_blacklist")} bl
+             ON bl.token_key = rh.token_key AND bl.is_active = true
+           WHERE rh.snapshot_id = $1
+             AND rh.balance_usd >= $2
+             AND bl.id IS NULL
+           GROUP BY rh.token_key, lower(e.entity_name)
+         ),
+         token_rollup AS (
+           SELECT
+              token_key,
+              MAX(token_symbol) as token_symbol,
+              MAX(token_name) as token_name,
+              MAX(network_name) as network_name,
+              MAX(chain_id) as chain_id,
+              MAX(token_address) as token_address,
+              ROUND(SUM(balance_usd)::numeric, 2) as holdings_usd,
+              COUNT(*) as smw_in,
+              MAX(market_cap) as market_cap,
+              MAX(token_age_hours) as token_age_hours,
+              MAX(moni_score) as moni_score,
+              MAX(moni_level) as moni_level,
+              MAX(moni_level_name) as moni_level_name,
+              MAX(moni_momentum_score_pct) as moni_momentum_score_pct,
+              MAX(moni_momentum_rank) as moni_momentum_rank,
+              MAX(volume_24h) as volume_24h,
+              MAX(txns_24h) as txns_24h,
+              MAX(liquidity_usd) as liquidity_usd
+           FROM canonical_holdings
+           GROUP BY token_key
+           HAVING COUNT(*) >= $3
+             AND (
+               MAX(CASE WHEN token_address IS NOT NULL THEN liquidity_usd END) IS NULL
+               OR MAX(CASE WHEN token_address IS NOT NULL THEN liquidity_usd END) >= $4
+             )
+             AND (
+               MAX(CASE WHEN token_address IS NOT NULL THEN volume_24h END) IS NULL
+               OR MAX(CASE WHEN token_address IS NOT NULL THEN volume_24h END) >= 1000
+             )
+             AND (
+               MAX(CASE WHEN token_address IS NOT NULL THEN txns_24h END) IS NULL
+               OR MAX(CASE WHEN token_address IS NOT NULL THEN txns_24h END) >= 11
+             )
+             AND (
+               $5::numeric IS NULL
+               OR MAX(market_cap) IS NULL
+               OR MAX(market_cap) < $5
+             )
+         )
+         SELECT
+            token_key,
+            token_symbol,
+            token_name,
+            network_name,
+            chain_id,
+            token_address,
+            holdings_usd,
+            smw_in,
+            market_cap,
+            token_age_hours,
             COALESCE(
-              MAX(rh.moni_score),
+              moni_score,
               (
                 SELECT prev.moni_score
                 FROM ${table("raw_holdings")} prev
-                WHERE prev.token_key = rh.token_key
+                WHERE prev.token_key = token_rollup.token_key
                   AND prev.snapshot_id < $1
                   AND prev.moni_score IS NOT NULL
                 ORDER BY prev.snapshot_id DESC
@@ -547,11 +631,11 @@ export function createPostgresStorage(): StorageAdapter {
               )
             ) as moni_score,
             COALESCE(
-              MAX(rh.moni_level),
+              moni_level,
               (
                 SELECT prev.moni_level
                 FROM ${table("raw_holdings")} prev
-                WHERE prev.token_key = rh.token_key
+                WHERE prev.token_key = token_rollup.token_key
                   AND prev.snapshot_id < $1
                   AND prev.moni_score IS NOT NULL
                 ORDER BY prev.snapshot_id DESC
@@ -559,11 +643,11 @@ export function createPostgresStorage(): StorageAdapter {
               )
             ) as moni_level,
             COALESCE(
-              MAX(rh.moni_level_name),
+              moni_level_name,
               (
                 SELECT prev.moni_level_name
                 FROM ${table("raw_holdings")} prev
-                WHERE prev.token_key = rh.token_key
+                WHERE prev.token_key = token_rollup.token_key
                   AND prev.snapshot_id < $1
                   AND prev.moni_score IS NOT NULL
                 ORDER BY prev.snapshot_id DESC
@@ -571,11 +655,11 @@ export function createPostgresStorage(): StorageAdapter {
               )
             ) as moni_level_name,
             COALESCE(
-              MAX(rh.moni_momentum_score_pct),
+              moni_momentum_score_pct,
               (
                 SELECT prev.moni_momentum_score_pct
                 FROM ${table("raw_holdings")} prev
-                WHERE prev.token_key = rh.token_key
+                WHERE prev.token_key = token_rollup.token_key
                   AND prev.snapshot_id < $1
                   AND prev.moni_score IS NOT NULL
                 ORDER BY prev.snapshot_id DESC
@@ -583,44 +667,20 @@ export function createPostgresStorage(): StorageAdapter {
               )
             ) as moni_momentum_score_pct,
             COALESCE(
-              MAX(rh.moni_momentum_rank),
+              moni_momentum_rank,
               (
                 SELECT prev.moni_momentum_rank
                 FROM ${table("raw_holdings")} prev
-                WHERE prev.token_key = rh.token_key
+                WHERE prev.token_key = token_rollup.token_key
                   AND prev.snapshot_id < $1
                   AND prev.moni_score IS NOT NULL
                 ORDER BY prev.snapshot_id DESC
                 LIMIT 1
               )
             ) as moni_momentum_rank,
-            MAX(rh.volume_24h) as volume_24h,
-            MAX(rh.txns_24h) as txns_24h
-         FROM ${table("raw_holdings")} rh
-         LEFT JOIN ${table("token_blacklist")} bl
-           ON bl.token_key = rh.token_key AND bl.is_active = true
-         WHERE rh.snapshot_id = $1
-           AND rh.balance_usd >= $2
-           AND bl.id IS NULL
-         GROUP BY rh.token_key
-         HAVING COUNT(DISTINCT rh.entity_id) >= $3
-           AND (
-             MAX(CASE WHEN rh.token_address IS NOT NULL THEN rh.liquidity_usd END) IS NULL
-             OR MAX(CASE WHEN rh.token_address IS NOT NULL THEN rh.liquidity_usd END) >= $4
-           )
-           AND (
-             MAX(CASE WHEN rh.token_address IS NOT NULL THEN rh.volume_24h END) IS NULL
-             OR MAX(CASE WHEN rh.token_address IS NOT NULL THEN rh.volume_24h END) >= 1000
-           )
-           AND (
-             MAX(CASE WHEN rh.token_address IS NOT NULL THEN rh.txns_24h END) IS NULL
-             OR MAX(CASE WHEN rh.token_address IS NOT NULL THEN rh.txns_24h END) >= 11
-           )
-           AND (
-             $5::numeric IS NULL
-             OR MAX(rh.market_cap) IS NULL
-             OR MAX(rh.market_cap) < $5
-           )
+            volume_24h,
+            txns_24h
+         FROM token_rollup
          ORDER BY smw_in DESC, holdings_usd DESC, token_symbol ASC`,
         [snapshotId, minBalanceUsd, minSmwIn, minLiquidityUsd, maxMarketCapUsd],
       );
@@ -630,19 +690,20 @@ export function createPostgresStorage(): StorageAdapter {
     async getTokenHolders(snapshotId: number, tokenKey: string, minBalanceUsd = 111): Promise<TokenHolderRow[]> {
       const result = await getPool().query(
         `SELECT
-           e.id as entity_id,
-           e.entity_name,
-           e.resolved_label,
-           rh.balance_usd,
-           rh.network_name,
-           rh.token_symbol,
-           rh.token_name
+           MIN(e.id) as entity_id,
+           MAX(e.entity_name) as entity_name,
+           MAX(e.resolved_label) as resolved_label,
+           MAX(rh.balance_usd) as balance_usd,
+           MAX(rh.network_name) as network_name,
+           MAX(rh.token_symbol) as token_symbol,
+           MAX(rh.token_name) as token_name
          FROM ${table("raw_holdings")} rh
          INNER JOIN ${table("entities")} e ON e.id = rh.entity_id
          WHERE rh.snapshot_id = $1
            AND rh.token_key = $2
            AND rh.balance_usd >= $3
-         ORDER BY rh.balance_usd DESC, e.entity_name ASC`,
+         GROUP BY lower(e.entity_name)
+         ORDER BY MAX(rh.balance_usd) DESC, MAX(e.entity_name) ASC`,
         [snapshotId, tokenKey, minBalanceUsd],
       );
 
@@ -659,34 +720,59 @@ export function createPostgresStorage(): StorageAdapter {
 
     async getTokenScoreHistory(tokenKey: string, minBalanceUsd = 111): Promise<TokenScorePoint[]> {
       const result = await getPool().query(
-        `SELECT
+        `WITH canonical_holdings AS (
+           SELECT
+             rh.snapshot_id,
+             rh.token_key,
+             lower(e.entity_name) as entity_key,
+             MAX(rh.token_symbol) as token_symbol,
+             MAX(rh.token_name) as token_name,
+             MAX(rh.network_name) as network_name,
+             MAX(rh.chain_id) as chain_id,
+             MAX(rh.token_address) as token_address,
+             MAX(rh.balance_usd) as balance_usd,
+             MAX(rh.market_cap) as market_cap,
+             MAX(rh.token_age_hours) as token_age_hours,
+             MAX(rh.moni_score) as moni_score,
+             MAX(rh.moni_level) as moni_level,
+             MAX(rh.moni_level_name) as moni_level_name,
+             MAX(rh.moni_momentum_score_pct) as moni_momentum_score_pct,
+             MAX(rh.moni_momentum_rank) as moni_momentum_rank,
+             MAX(rh.volume_24h) as volume_24h,
+             MAX(rh.txns_24h) as txns_24h
+           FROM ${table("raw_holdings")} rh
+           INNER JOIN ${table("entities")} e ON e.id = rh.entity_id
+           WHERE rh.token_key = $1
+             AND rh.balance_usd >= $2
+           GROUP BY rh.snapshot_id, rh.token_key, lower(e.entity_name)
+         )
+         SELECT
             hs.id as "snapshotId",
             hs.status as "snapshotStatus",
             hs.created_at as "snapshotCreatedAt",
             hs.finished_at as "snapshotFinishedAt",
-            rh.token_key as "tokenKey",
-            MAX(rh.token_symbol) as "tokenSymbol",
-            MAX(rh.token_name) as "tokenName",
-            MAX(rh.network_name) as "networkName",
-            MAX(rh.chain_id) as "chainId",
-            MAX(rh.token_address) as "tokenAddress",
-            ROUND(SUM(rh.balance_usd), 2) as "holdingsUsd",
-            COUNT(DISTINCT rh.entity_id) as "smwIn",
-            MAX(rh.market_cap) as "marketCap",
-            MAX(rh.token_age_hours) as "tokenAgeHours",
-            MAX(rh.moni_score) as "moniScore",
-            MAX(rh.moni_level) as "moniLevel",
-            MAX(rh.moni_level_name) as "moniLevelName",
-            MAX(rh.moni_momentum_score_pct) as "moniMomentumScorePct",
-            MAX(rh.moni_momentum_rank) as "moniMomentumRank",
-            MAX(rh.volume_24h) as "volume24h",
-            MAX(rh.txns_24h) as "txns24h"
-         FROM ${table("raw_holdings")} rh
-         INNER JOIN ${table("holding_snapshots")} hs ON hs.id = rh.snapshot_id
-         WHERE rh.token_key = $1
-           AND rh.balance_usd >= $2
+            ch.token_key as "tokenKey",
+            MAX(ch.token_symbol) as "tokenSymbol",
+            MAX(ch.token_name) as "tokenName",
+            MAX(ch.network_name) as "networkName",
+            MAX(ch.chain_id) as "chainId",
+            MAX(ch.token_address) as "tokenAddress",
+            ROUND(SUM(ch.balance_usd)::numeric, 2) as "holdingsUsd",
+            COUNT(*) as "smwIn",
+            MAX(ch.market_cap) as "marketCap",
+            MAX(ch.token_age_hours) as "tokenAgeHours",
+            MAX(ch.moni_score) as "moniScore",
+            MAX(ch.moni_level) as "moniLevel",
+            MAX(ch.moni_level_name) as "moniLevelName",
+            MAX(ch.moni_momentum_score_pct) as "moniMomentumScorePct",
+            MAX(ch.moni_momentum_rank) as "moniMomentumRank",
+            MAX(ch.volume_24h) as "volume24h",
+            MAX(ch.txns_24h) as "txns24h"
+         FROM canonical_holdings ch
+         INNER JOIN ${table("holding_snapshots")} hs ON hs.id = ch.snapshot_id
+         WHERE ch.token_key = $1
            AND hs.status IN ('success', 'partial')
-         GROUP BY hs.id, rh.token_key
+         GROUP BY hs.id, ch.token_key
          ORDER BY COALESCE(hs.finished_at, hs.created_at) ASC, hs.id ASC`,
         [tokenKey, minBalanceUsd],
       );

@@ -515,20 +515,34 @@ function createSqliteStorage(cwd: string): StorageAdapter {
     getSnapshotTokensForEnrichment(snapshotId: number, minBalanceUsd = 111, minSmwIn = 1): SnapshotTokenForEnrichment[] {
       return db
         .prepare(
-          `SELECT
-              rh.token_key as tokenKey,
-              MAX(rh.token_symbol) as tokenSymbol,
-              MAX(rh.token_name) as tokenName,
-              MAX(rh.token_address) as tokenAddress,
-              MAX(rh.network_name) as networkName,
-              MAX(rh.chain_id) as chainId,
-              COUNT(DISTINCT rh.entity_id) as smwIn,
-              ROUND(SUM(rh.balance_usd), 2) as holdingsUsd
-           FROM raw_holdings rh
-           WHERE rh.snapshot_id = ?
-             AND rh.balance_usd >= ?
-           GROUP BY rh.token_key
-           HAVING COUNT(DISTINCT rh.entity_id) >= ?
+          `WITH canonical_holdings AS (
+             SELECT
+               rh.token_key,
+               lower(e.entity_name) as entity_key,
+               MAX(rh.token_symbol) as tokenSymbol,
+               MAX(rh.token_name) as tokenName,
+               MAX(rh.token_address) as tokenAddress,
+               MAX(rh.network_name) as networkName,
+               MAX(rh.chain_id) as chainId,
+               MAX(rh.balance_usd) as balanceUsd
+             FROM raw_holdings rh
+             INNER JOIN entities e ON e.id = rh.entity_id
+             WHERE rh.snapshot_id = ?
+               AND rh.balance_usd >= ?
+             GROUP BY rh.token_key, lower(e.entity_name)
+           )
+           SELECT
+              token_key as tokenKey,
+              MAX(tokenSymbol) as tokenSymbol,
+              MAX(tokenName) as tokenName,
+              MAX(tokenAddress) as tokenAddress,
+              MAX(networkName) as networkName,
+              MAX(chainId) as chainId,
+              COUNT(*) as smwIn,
+              ROUND(SUM(balanceUsd), 2) as holdingsUsd
+           FROM canonical_holdings
+           GROUP BY token_key
+           HAVING COUNT(*) >= ?
            ORDER BY smwIn DESC, holdingsUsd DESC, tokenSymbol COLLATE NOCASE ASC`,
         )
         .all(snapshotId, minBalanceUsd, minSmwIn) as SnapshotTokenForEnrichment[];
@@ -543,23 +557,93 @@ function createSqliteStorage(cwd: string): StorageAdapter {
     ): TokenOverviewRow[] {
       const rows = db
         .prepare(
-          `SELECT
-              rh.token_key as tokenKey,
-              MAX(rh.token_symbol) as tokenSymbol,
-              MAX(rh.token_name) as tokenName,
-              MAX(rh.network_name) as networkName,
-              MAX(rh.chain_id) as chainId,
-              MAX(rh.token_address) as tokenAddress,
-              ROUND(SUM(rh.balance_usd), 2) as holdingsUsd,
-              COUNT(DISTINCT rh.entity_id) as smwIn,
-              MAX(rh.market_cap) as marketCap,
-              MAX(rh.token_age_hours) as tokenAgeHours,
+          `WITH canonical_holdings AS (
+             SELECT
+               rh.token_key,
+               lower(e.entity_name) as entity_key,
+               MAX(rh.token_symbol) as tokenSymbol,
+               MAX(rh.token_name) as tokenName,
+               MAX(rh.network_name) as networkName,
+               MAX(rh.chain_id) as chainId,
+               MAX(rh.token_address) as tokenAddress,
+               MAX(rh.balance_usd) as balanceUsd,
+               MAX(rh.market_cap) as marketCap,
+               MAX(rh.token_age_hours) as tokenAgeHours,
+               MAX(rh.moni_score) as moniScore,
+               MAX(rh.moni_level) as moniLevel,
+               MAX(rh.moni_level_name) as moniLevelName,
+               MAX(rh.moni_momentum_score_pct) as moniMomentumScorePct,
+               MAX(rh.moni_momentum_rank) as moniMomentumRank,
+               MAX(rh.volume_24h) as volume24h,
+               MAX(rh.txns_24h) as txns24h,
+               MAX(rh.liquidity_usd) as liquidityUsd
+             FROM raw_holdings rh
+             INNER JOIN entities e ON e.id = rh.entity_id
+             LEFT JOIN token_blacklist bl
+               ON bl.token_key = rh.token_key AND bl.is_active = 1
+             WHERE rh.snapshot_id = @snapshotId
+               AND rh.balance_usd >= @minBalanceUsd
+               AND bl.id IS NULL
+             GROUP BY rh.token_key, lower(e.entity_name)
+           ),
+           token_rollup AS (
+             SELECT
+               token_key as tokenKey,
+               MAX(tokenSymbol) as tokenSymbol,
+               MAX(tokenName) as tokenName,
+               MAX(networkName) as networkName,
+               MAX(chainId) as chainId,
+               MAX(tokenAddress) as tokenAddress,
+               ROUND(SUM(balanceUsd), 2) as holdingsUsd,
+               COUNT(*) as smwIn,
+               MAX(marketCap) as marketCap,
+               MAX(tokenAgeHours) as tokenAgeHours,
+               MAX(moniScore) as moniScore,
+               MAX(moniLevel) as moniLevel,
+               MAX(moniLevelName) as moniLevelName,
+               MAX(moniMomentumScorePct) as moniMomentumScorePct,
+               MAX(moniMomentumRank) as moniMomentumRank,
+               MAX(volume24h) as volume24h,
+               MAX(txns24h) as txns24h,
+               MAX(liquidityUsd) as liquidityUsd
+             FROM canonical_holdings
+             GROUP BY token_key
+             HAVING COUNT(*) >= @minSmwIn
+               AND (
+                 MAX(CASE WHEN tokenAddress IS NOT NULL THEN liquidityUsd END) IS NULL
+                 OR MAX(CASE WHEN tokenAddress IS NOT NULL THEN liquidityUsd END) >= @minLiquidityUsd
+               )
+               AND (
+                 MAX(CASE WHEN tokenAddress IS NOT NULL THEN volume24h END) IS NULL
+                 OR MAX(CASE WHEN tokenAddress IS NOT NULL THEN volume24h END) >= 1000
+               )
+               AND (
+                 MAX(CASE WHEN tokenAddress IS NOT NULL THEN txns24h END) IS NULL
+                 OR MAX(CASE WHEN tokenAddress IS NOT NULL THEN txns24h END) >= 11
+               )
+               AND (
+                 @maxMarketCapUsd IS NULL
+                 OR MAX(marketCap) IS NULL
+                 OR MAX(marketCap) < @maxMarketCapUsd
+               )
+           )
+           SELECT
+              tokenKey,
+              tokenSymbol,
+              tokenName,
+              networkName,
+              chainId,
+              tokenAddress,
+              holdingsUsd,
+              smwIn,
+              marketCap,
+              tokenAgeHours,
               COALESCE(
-                MAX(rh.moni_score),
+                moniScore,
                 (
                   SELECT prev.moni_score
                   FROM raw_holdings prev
-                  WHERE prev.token_key = rh.token_key
+                  WHERE prev.token_key = token_rollup.tokenKey
                     AND prev.snapshot_id < @snapshotId
                     AND prev.moni_score IS NOT NULL
                   ORDER BY prev.snapshot_id DESC
@@ -567,11 +651,11 @@ function createSqliteStorage(cwd: string): StorageAdapter {
                 )
               ) as moniScore,
               COALESCE(
-                MAX(rh.moni_level),
+                moniLevel,
                 (
                   SELECT prev.moni_level
                   FROM raw_holdings prev
-                  WHERE prev.token_key = rh.token_key
+                  WHERE prev.token_key = token_rollup.tokenKey
                     AND prev.snapshot_id < @snapshotId
                     AND prev.moni_score IS NOT NULL
                   ORDER BY prev.snapshot_id DESC
@@ -579,11 +663,11 @@ function createSqliteStorage(cwd: string): StorageAdapter {
                 )
               ) as moniLevel,
               COALESCE(
-                MAX(rh.moni_level_name),
+                moniLevelName,
                 (
                   SELECT prev.moni_level_name
                   FROM raw_holdings prev
-                  WHERE prev.token_key = rh.token_key
+                  WHERE prev.token_key = token_rollup.tokenKey
                     AND prev.snapshot_id < @snapshotId
                     AND prev.moni_score IS NOT NULL
                   ORDER BY prev.snapshot_id DESC
@@ -591,11 +675,11 @@ function createSqliteStorage(cwd: string): StorageAdapter {
                 )
               ) as moniLevelName,
               COALESCE(
-                MAX(rh.moni_momentum_score_pct),
+                moniMomentumScorePct,
                 (
                   SELECT prev.moni_momentum_score_pct
                   FROM raw_holdings prev
-                  WHERE prev.token_key = rh.token_key
+                  WHERE prev.token_key = token_rollup.tokenKey
                     AND prev.snapshot_id < @snapshotId
                     AND prev.moni_score IS NOT NULL
                   ORDER BY prev.snapshot_id DESC
@@ -603,44 +687,20 @@ function createSqliteStorage(cwd: string): StorageAdapter {
                 )
               ) as moniMomentumScorePct,
               COALESCE(
-                MAX(rh.moni_momentum_rank),
+                moniMomentumRank,
                 (
                   SELECT prev.moni_momentum_rank
                   FROM raw_holdings prev
-                  WHERE prev.token_key = rh.token_key
+                  WHERE prev.token_key = token_rollup.tokenKey
                     AND prev.snapshot_id < @snapshotId
                     AND prev.moni_score IS NOT NULL
                   ORDER BY prev.snapshot_id DESC
                   LIMIT 1
                 )
               ) as moniMomentumRank,
-              MAX(rh.volume_24h) as volume24h,
-              MAX(rh.txns_24h) as txns24h
-           FROM raw_holdings rh
-           LEFT JOIN token_blacklist bl
-             ON bl.token_key = rh.token_key AND bl.is_active = 1
-           WHERE rh.snapshot_id = @snapshotId
-             AND rh.balance_usd >= @minBalanceUsd
-             AND bl.id IS NULL
-           GROUP BY rh.token_key
-           HAVING COUNT(DISTINCT rh.entity_id) >= @minSmwIn
-             AND (
-               MAX(CASE WHEN rh.token_address IS NOT NULL THEN rh.liquidity_usd END) IS NULL
-               OR MAX(CASE WHEN rh.token_address IS NOT NULL THEN rh.liquidity_usd END) >= @minLiquidityUsd
-             )
-             AND (
-               MAX(CASE WHEN rh.token_address IS NOT NULL THEN rh.volume_24h END) IS NULL
-               OR MAX(CASE WHEN rh.token_address IS NOT NULL THEN rh.volume_24h END) >= 1000
-             )
-             AND (
-               MAX(CASE WHEN rh.token_address IS NOT NULL THEN rh.txns_24h END) IS NULL
-               OR MAX(CASE WHEN rh.token_address IS NOT NULL THEN rh.txns_24h END) >= 11
-             )
-             AND (
-               @maxMarketCapUsd IS NULL
-               OR MAX(rh.market_cap) IS NULL
-               OR MAX(rh.market_cap) < @maxMarketCapUsd
-             )
+              volume24h,
+              txns24h
+           FROM token_rollup
            ORDER BY smwIn DESC, holdingsUsd DESC, tokenSymbol COLLATE NOCASE ASC`,
         )
         .all({
@@ -659,19 +719,20 @@ function createSqliteStorage(cwd: string): StorageAdapter {
       return db
         .prepare(
           `SELECT
-             e.id as entityId,
-             e.entity_name as entityName,
-             e.resolved_label as resolvedLabel,
-             rh.balance_usd as balanceUsd,
-             rh.network_name as networkName,
-             rh.token_symbol as tokenSymbol,
-             rh.token_name as tokenName
+             MIN(e.id) as entityId,
+             MAX(e.entity_name) as entityName,
+             MAX(e.resolved_label) as resolvedLabel,
+             MAX(rh.balance_usd) as balanceUsd,
+             MAX(rh.network_name) as networkName,
+             MAX(rh.token_symbol) as tokenSymbol,
+             MAX(rh.token_name) as tokenName
            FROM raw_holdings rh
            INNER JOIN entities e ON e.id = rh.entity_id
            WHERE rh.snapshot_id = ?
              AND rh.token_key = ?
              AND rh.balance_usd >= ?
-           ORDER BY rh.balance_usd DESC, e.entity_name COLLATE NOCASE ASC`,
+           GROUP BY lower(e.entity_name)
+           ORDER BY MAX(rh.balance_usd) DESC, MAX(e.entity_name) COLLATE NOCASE ASC`,
         )
         .all(snapshotId, tokenKey, minBalanceUsd) as TokenHolderRow[];
     },
@@ -679,37 +740,62 @@ function createSqliteStorage(cwd: string): StorageAdapter {
     getTokenScoreHistory(tokenKey: string, minBalanceUsd = 111): TokenScorePoint[] {
       const rows = db
         .prepare(
-          `SELECT
+          `WITH canonical_holdings AS (
+             SELECT
+               rh.snapshot_id,
+               rh.token_key,
+               lower(e.entity_name) as entity_key,
+               MAX(rh.token_symbol) as tokenSymbol,
+               MAX(rh.token_name) as tokenName,
+               MAX(rh.network_name) as networkName,
+               MAX(rh.chain_id) as chainId,
+               MAX(rh.token_address) as tokenAddress,
+               MAX(rh.balance_usd) as balanceUsd,
+               MAX(rh.market_cap) as marketCap,
+               MAX(rh.token_age_hours) as tokenAgeHours,
+               MAX(rh.moni_score) as moniScore,
+               MAX(rh.moni_level) as moniLevel,
+               MAX(rh.moni_level_name) as moniLevelName,
+               MAX(rh.moni_momentum_score_pct) as moniMomentumScorePct,
+               MAX(rh.moni_momentum_rank) as moniMomentumRank,
+               MAX(rh.volume_24h) as volume24h,
+               MAX(rh.txns_24h) as txns24h
+             FROM raw_holdings rh
+             INNER JOIN entities e ON e.id = rh.entity_id
+             WHERE rh.token_key = ?
+               AND rh.balance_usd >= ?
+             GROUP BY rh.snapshot_id, rh.token_key, lower(e.entity_name)
+           )
+           SELECT
               hs.id as snapshotId,
               hs.status as snapshotStatus,
               hs.created_at as snapshotCreatedAt,
               hs.finished_at as snapshotFinishedAt,
-              rh.token_key as tokenKey,
-              MAX(rh.token_symbol) as tokenSymbol,
-              MAX(rh.token_name) as tokenName,
-              MAX(rh.network_name) as networkName,
-              MAX(rh.chain_id) as chainId,
-              MAX(rh.token_address) as tokenAddress,
-              ROUND(SUM(rh.balance_usd), 2) as holdingsUsd,
-              COUNT(DISTINCT rh.entity_id) as smwIn,
-              MAX(rh.market_cap) as marketCap,
-              MAX(rh.token_age_hours) as tokenAgeHours,
-              MAX(rh.moni_score) as moniScore,
-              MAX(rh.moni_level) as moniLevel,
-              MAX(rh.moni_level_name) as moniLevelName,
-              MAX(rh.moni_momentum_score_pct) as moniMomentumScorePct,
-              MAX(rh.moni_momentum_rank) as moniMomentumRank,
-              MAX(rh.volume_24h) as volume24h,
-              MAX(rh.txns_24h) as txns24h
-           FROM raw_holdings rh
-           INNER JOIN holding_snapshots hs ON hs.id = rh.snapshot_id
-           WHERE rh.token_key = ?
-             AND rh.balance_usd >= ?
+              ch.token_key as tokenKey,
+              MAX(ch.tokenSymbol) as tokenSymbol,
+              MAX(ch.tokenName) as tokenName,
+              MAX(ch.networkName) as networkName,
+              MAX(ch.chainId) as chainId,
+              MAX(ch.tokenAddress) as tokenAddress,
+              ROUND(SUM(ch.balanceUsd), 2) as holdingsUsd,
+              COUNT(*) as smwIn,
+              MAX(ch.marketCap) as marketCap,
+              MAX(ch.tokenAgeHours) as tokenAgeHours,
+              MAX(ch.moniScore) as moniScore,
+              MAX(ch.moniLevel) as moniLevel,
+              MAX(ch.moniLevelName) as moniLevelName,
+              MAX(ch.moniMomentumScorePct) as moniMomentumScorePct,
+              MAX(ch.moniMomentumRank) as moniMomentumRank,
+              MAX(ch.volume24h) as volume24h,
+              MAX(ch.txns24h) as txns24h
+           FROM canonical_holdings ch
+           INNER JOIN holding_snapshots hs ON hs.id = ch.snapshot_id
+           WHERE ch.token_key = ?
              AND hs.status IN ('success', 'partial')
-           GROUP BY hs.id, rh.token_key
+           GROUP BY hs.id, ch.token_key
            ORDER BY datetime(COALESCE(hs.finished_at, hs.created_at)) ASC, hs.id ASC`,
         )
-        .all(tokenKey, minBalanceUsd) as Array<Omit<TokenScorePoint, "score">>;
+        .all(tokenKey, minBalanceUsd, tokenKey) as Array<Omit<TokenScorePoint, "score">>;
       return rows.map(withOpportunityScore);
     },
 

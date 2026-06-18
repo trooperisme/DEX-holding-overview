@@ -35,6 +35,35 @@ function rawHolding(snapshotId: number, entityId: number, moniScore: number | nu
   };
 }
 
+function tokenHolding(snapshotId: number, entityId: number, input: Partial<RawHoldingRecord> = {}): RawHoldingRecord {
+  return {
+    snapshotId,
+    entityId,
+    tokenKey: "1:0xfaba6f8e4a5e8ab82f62fe7c39859fa577269be3",
+    tokenSymbol: "ONDO",
+    tokenName: "Ondo",
+    tokenAddress: "0xfaba6f8e4a5e8ab82f62fe7c39859fa577269be3",
+    networkName: "Ethereum",
+    chainId: 1,
+    balance: "1000",
+    balanceRaw: "1000",
+    balanceUsd: 160980.3054685639,
+    price: null,
+    marketCap: 1730000000,
+    liquidityUsd: 100000,
+    volume24h: 5000,
+    txns24h: 25,
+    tokenAgeHours: 1000,
+    moniScore: null,
+    moniLevel: null,
+    moniLevelName: null,
+    moniMomentumScorePct: null,
+    moniMomentumRank: null,
+    fetchedAt: new Date().toISOString(),
+    ...input,
+  };
+}
+
 test("getLatestTokenMoniDataBeforeSnapshot returns the prior known Moni score", async () => {
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "dex-storage-test-"));
   const previousDatabaseUrl = process.env.DATABASE_URL;
@@ -108,6 +137,73 @@ test("getOverview reuses the latest prior Moni score when the current snapshot i
     assert.equal(overview?.moniLevelName, "Medium");
     assert.equal(overview?.moniMomentumScorePct, 0);
     assert.equal(overview?.moniMomentumRank, 1467);
+  } finally {
+    await storage.close();
+    if (previousDatabaseUrl == null) {
+      delete process.env.DATABASE_URL;
+    } else {
+      process.env.DATABASE_URL = previousDatabaseUrl;
+    }
+    fs.rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("token aggregations collapse duplicate database rows for the same logical entity", async () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "dex-storage-test-"));
+  const previousDatabaseUrl = process.env.DATABASE_URL;
+  delete process.env.DATABASE_URL;
+
+  let storage = createStorage(cwd);
+  await storage.close();
+
+  const Database = require("better-sqlite3") as typeof import("better-sqlite3");
+  const db = new Database(resolveWorkspacePaths(cwd).dbFile);
+  const now = new Date().toISOString();
+  const insertEntity = db.prepare(`
+    INSERT INTO entities (entity_name, full_zapper_link, resolved_label, link_type, created_at, updated_at)
+    VALUES (?, ?, ?, 'bundle', ?, ?)
+  `);
+  const firstId = Number(
+    insertEntity.run("JoshuaDeuk", "https://zapper.xyz/bundle/0xfirst?label=JoshuaDeuk", "JoshuaDeuk", now, now)
+      .lastInsertRowid,
+  );
+  const duplicateId = Number(
+    insertEntity.run("JoshuaDeuk", "https://zapper.xyz/bundle/0xduplicate?label=JoshuaDeuk", "JoshuaDeuk", now, now)
+      .lastInsertRowid,
+  );
+  db.close();
+
+  storage = createStorage(cwd);
+  try {
+    const snapshot = await storage.createSnapshot(2, null);
+    await storage.insertRawHoldingsForEntity(snapshot, firstId, [tokenHolding(snapshot, firstId)]);
+    await storage.insertRawHoldingsForEntity(snapshot, duplicateId, [tokenHolding(snapshot, duplicateId)]);
+    await storage.updateSnapshot({
+      id: snapshot,
+      status: "partial",
+      totalRows: 2,
+      entitiesCompleted: 2,
+      entitiesFailed: 0,
+      finishedAt: new Date().toISOString(),
+    });
+
+    const [overview] = await storage.getOverview(snapshot, 111, 1, 11111, null);
+    assert.equal(overview?.tokenSymbol, "ONDO");
+    assert.equal(overview?.smwIn, 1);
+    assert.equal(overview?.holdingsUsd, 160980.31);
+
+    const holders = await storage.getTokenHolders(snapshot, "1:0xfaba6f8e4a5e8ab82f62fe7c39859fa577269be3", 111);
+    assert.equal(holders.length, 1);
+    assert.equal(holders[0].entityName, "JoshuaDeuk");
+    assert.equal(holders[0].balanceUsd, 160980.3054685639);
+
+    const [history] = await storage.getTokenScoreHistory("1:0xfaba6f8e4a5e8ab82f62fe7c39859fa577269be3", 111);
+    assert.equal(history?.smwIn, 1);
+    assert.equal(history?.holdingsUsd, 160980.31);
+
+    const [enrichmentToken] = await storage.getSnapshotTokensForEnrichment(snapshot, 111, 1);
+    assert.equal(enrichmentToken?.smwIn, 1);
+    assert.equal(enrichmentToken?.holdingsUsd, 160980.31);
   } finally {
     await storage.close();
     if (previousDatabaseUrl == null) {
