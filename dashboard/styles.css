@@ -10,8 +10,8 @@
   --text: #eef2f7;
   --muted: #94a0af;
   --accent: #5af2c4;
-  --metric-bar: rgba(90, 242, 196, 0.14);
-  --metric-bar-edge: rgba(90, 242, 196, 0.08);
+  --metric-bar: 90, 242, 196;
+  --metric-bar-edge: 255, 191, 105;
   --accent-2: #ffbf69;
   --danger: #ff8f8f;
   --warning: #ffd479;
@@ -491,14 +491,21 @@ th {
   isolation: isolate;
   min-width: 128px;
   overflow: hidden;
+  background: rgba(90, 242, 196, 0.035);
 }
 
 .metric-cell__bar {
   position: absolute;
   z-index: 0;
   inset: 0 auto 0 0;
-  background: linear-gradient(90deg, var(--metric-bar), var(--metric-bar-edge));
-  border-right: 1px solid rgba(90, 242, 196, 0.16);
+  background:
+    linear-gradient(
+      90deg,
+      rgba(var(--metric-bar), calc(0.16 + (var(--metric-intensity, 0.2) * 0.24))),
+      rgba(var(--metric-bar-edge), calc(0.06 + (var(--metric-intensity, 0.2) * 0.12)))
+    );
+  border-right: 1px solid rgba(90, 242, 196, 0.42);
+  box-shadow: inset -1px 0 0 rgba(90, 242, 196, 0.18);
   pointer-events: none;
   transition: width 220ms ease;
 }

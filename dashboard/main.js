@@ -92,8 +92,9 @@ function buildMetricCell(value, max, formatter) {
   const width = Number.isFinite(numeric) && numeric > 0 && max > 0
     ? Math.min(100, (numeric / max) * 100)
     : 0;
+  const intensity = width > 0 ? Math.max(0.18, Math.min(0.72, width / 100)) : 0;
   const bar = width > 0
-    ? `<span class="metric-cell__bar" style="width: ${width.toFixed(3)}%" aria-hidden="true"></span>`
+    ? `<span class="metric-cell__bar" style="width: ${width.toFixed(3)}%; --metric-intensity: ${intensity.toFixed(3)}" aria-hidden="true"></span>`
     : "";
 
   return `${bar}<span class="metric-cell__value">${escapeHtml(formatter(value))}</span>`;
@@ -1174,6 +1175,7 @@ document.addEventListener("click", async (event) => {
     renderTable();
     if (state.openTokenKey === tokenKey) {
       void loadHolders(tokenKey);
+      void loadScoreHistory(tokenKey);
     }
   }
 });
