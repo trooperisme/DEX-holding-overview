@@ -171,15 +171,37 @@ export function createPostgresStorage(): StorageAdapter {
                 [entity.entityName, entity.fullZapperLink, entity.resolvedLabel, entity.linkType, now],
               );
           const entityId = Number(result.rows[0].id);
-          await client.query(`DELETE FROM ${table("entity_wallets")} WHERE entity_id = $1`, [entityId]);
+          const duplicateResult = await client.query<{ id: string }>(
+            `SELECT id
+             FROM ${table("entities")}
+             WHERE lower(entity_name) = lower($1)
+             ORDER BY id ASC`,
+            [entity.entityName],
+          );
 
-          for (const [walletIndex, walletAddress] of entity.walletAddresses.entries()) {
-            await client.query(
-              `INSERT INTO ${table("entity_wallets")} (
-                 entity_id, wallet_address, wallet_index, created_at
-               ) VALUES ($1, $2, $3, $4)`,
-              [entityId, walletAddress, walletIndex, now],
-            );
+          for (const duplicate of duplicateResult.rows) {
+            const duplicateId = Number(duplicate.id);
+            if (duplicateId !== entityId) {
+              await client.query(
+                `UPDATE ${table("entities")}
+                 SET entity_name = $1,
+                     resolved_label = $2,
+                     link_type = $3,
+                     updated_at = $4
+                 WHERE id = $5`,
+                [entity.entityName, entity.resolvedLabel, entity.linkType, now, duplicateId],
+              );
+            }
+
+            await client.query(`DELETE FROM ${table("entity_wallets")} WHERE entity_id = $1`, [duplicateId]);
+            for (const [walletIndex, walletAddress] of entity.walletAddresses.entries()) {
+              await client.query(
+                `INSERT INTO ${table("entity_wallets")} (
+                   entity_id, wallet_address, wallet_index, created_at
+                 ) VALUES ($1, $2, $3, $4)`,
+                [duplicateId, walletAddress, walletIndex, now],
+              );
+            }
           }
         }
       });

@@ -74,10 +74,6 @@ function isSolanaWalletAddress(address: string): boolean {
   return !address.startsWith("0x") && SOLANA_WALLET_RE.test(address);
 }
 
-function isSolanaTokenBalance(holding: ZapperTokenBalance): boolean {
-  return holding.chainId === SOLANA_CHAIN_ID || holding.networkName.toLowerCase() === "solana";
-}
-
 function addDecimalStrings(left: string, right: string): string {
   const sum = Number(left || 0) + Number(right || 0);
   return Number.isFinite(sum) ? String(sum) : left;
@@ -467,18 +463,26 @@ export async function runDexRefresh(options: {
       });
 
       try {
-        const result = await fetchZapperTokenBalances(
-          options.apiKey,
-          entity.wallets.map((wallet) => wallet.walletAddress),
-          signal,
-        );
-
-        throwIfAborted();
-
-        let balances = result.balances;
+        const walletAddresses = entity.wallets.map((wallet) => wallet.walletAddress);
         const solanaWalletAddresses = entity.wallets
           .map((wallet) => wallet.walletAddress)
           .filter(isSolanaWalletAddress);
+        const zapperWalletAddresses = firecrawlApiKey
+          ? walletAddresses.filter((walletAddress) => !isSolanaWalletAddress(walletAddress))
+          : walletAddresses;
+        const balances: ZapperTokenBalance[] = [];
+        let zapperError: unknown = null;
+
+        if (zapperWalletAddresses.length > 0) {
+          try {
+            const result = await fetchZapperTokenBalances(options.apiKey, zapperWalletAddresses, signal);
+            balances.push(...result.balances);
+          } catch (error) {
+            zapperError = error;
+          }
+        }
+
+        throwIfAborted();
 
         if (firecrawlApiKey && solanaWalletAddresses.length > 0) {
           const solscanResult = await fetchSolscanEntityBalances({
@@ -489,10 +493,7 @@ export async function runDexRefresh(options: {
           });
 
           if (solscanResult.walletsSucceeded > 0) {
-            balances = [
-              ...result.balances.filter((holding) => !isSolanaTokenBalance(holding)),
-              ...solscanResult.balances,
-            ];
+            balances.push(...solscanResult.balances);
             emitLog(
               callbacks,
               solscanResult.walletsFailed > 0 ? "warning" : "info",
@@ -513,8 +514,21 @@ export async function runDexRefresh(options: {
           emitLog(callbacks, "warning", `Solscan override skipped for ${entityLabel}: FIRECRAWL_API_KEY is not configured.`);
         }
 
+        if (zapperError) {
+          const message = zapperError instanceof Error ? zapperError.message : String(zapperError);
+          if (!balances.length) {
+            throw new Error(message);
+          }
+          emitLog(
+            callbacks,
+            "warning",
+            `Zapper fetch failed for ${entityLabel}; keeping ${balances.length} Solscan token row(s): ${message}`,
+          );
+        }
+
+        const normalizedBalances = aggregateTokenBalancesByKey(balances);
         const fetchedAt = new Date().toISOString();
-        const rows: RawHoldingRecord[] = balances.map((holding) => ({
+        const rows: RawHoldingRecord[] = normalizedBalances.map((holding) => ({
           snapshotId,
           entityId: entity.id,
           tokenKey: toTokenKey(holding),

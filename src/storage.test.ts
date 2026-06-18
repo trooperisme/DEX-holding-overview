@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { resolveWorkspacePaths } from "./runtime-paths";
 import { createStorage } from "./storage";
 import { RawHoldingRecord } from "./types";
 
@@ -154,6 +155,98 @@ test("replaceEntities updates an existing named entity when its Zapper bundle li
     );
   } finally {
     await storage.close();
+    if (previousDatabaseUrl == null) {
+      delete process.env.DATABASE_URL;
+    } else {
+      process.env.DATABASE_URL = previousDatabaseUrl;
+    }
+    fs.rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("replaceEntities normalizes stale duplicate entity wallet lists", async () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "dex-storage-test-"));
+  const previousDatabaseUrl = process.env.DATABASE_URL;
+  delete process.env.DATABASE_URL;
+
+  const currentWallets = [
+    "0x1289894a932ae5b4679b236f96eae4236f4ee9c4",
+    "0x8774e69e6fab8fae50cc27a82a224dd9d84a427c",
+    "0xa71835dd5179cccb89167a9b1016b5c9043b8f94",
+    "0x2fb8a5b21aaa9b77e462e72bbf4980a6ac7df6c5",
+    "0x73c8e23e3f2feffcfa7ffa96e44660ed16c92061",
+    "7nzGxho8yxAm9qV2rabcCZ8GppC93TZhGNZ69x6UxZiS",
+    "AVHjrEs5my3mf6tersAAbYwLXUJqKybsjyzSkdBdqxq4",
+    "2GHgLubjWvLtuw6Zxq6KqmaWvPduokpWeukdb9yGTNEi",
+    "ACi7K9E5LZFNzW2w134tb1eRmBA7Rp6cwyZCPCyk761t",
+    "H5fStxz4scwWuXN4n7wo3GgpYud3t1Mz1fKMkcwaH9XW",
+    "FhsHDuhHbhw2HTkz7eWKJn33HSgq4E4MYNBocrk3ya1W",
+    "GFiW4FE7QCjW2zgKUyHTZU8hikhGjXR7sgg4oSDo5mPc",
+    "2hRepUfb8NNCX43n3ffDEHtMKGt95qBVsEj8AKuMGU6M",
+    "oJEyy4MkksJzjNbVCXSctRKC7fq4SCYQ9PJDBM4BYzm",
+    "6Y3UN9AnivpDUN5DREHuUSYHPiaXmmNSpCU8aXdXiNAL",
+  ];
+
+  let storage = createStorage(cwd);
+  await storage.close();
+
+  const Database = require("better-sqlite3") as typeof import("better-sqlite3");
+  const db = new Database(resolveWorkspacePaths(cwd).dbFile);
+  const now = new Date().toISOString();
+  const insertEntity = db.prepare(`
+    INSERT INTO entities (entity_name, full_zapper_link, resolved_label, link_type, created_at, updated_at)
+    VALUES (?, ?, ?, 'bundle', ?, ?)
+  `);
+  const insertWallet = db.prepare(`
+    INSERT INTO entity_wallets (entity_id, wallet_address, wallet_index, created_at)
+    VALUES (?, ?, ?, ?)
+  `);
+  const staleId = Number(insertEntity.run("0xUnihaxor", "https://zapper.xyz/bundle/0xold?label=0xunihaxor", "0xunihaxor", now, now).lastInsertRowid);
+  const oversizeId = Number(insertEntity.run("0xUnihaxor", "https://zapper.xyz/bundle/0xoversize?label=0xunihaxor", "0xunihaxor", now, now).lastInsertRowid);
+  for (let index = 0; index < 22; index += 1) {
+    insertWallet.run(oversizeId, `stale-wallet-${index}`, index, now);
+  }
+  insertWallet.run(staleId, "0xold", 0, now);
+  db.close();
+
+  storage = createStorage(cwd);
+  try {
+    await storage.replaceEntities([
+      {
+        entityName: "0xUnihaxor",
+        fullZapperLink: `https://zapper.xyz/bundle/${currentWallets.join(",")}?label=0xunihaxor`,
+        resolvedLabel: "0xunihaxor",
+        linkType: "bundle",
+        walletAddresses: currentWallets,
+      },
+    ]);
+    const entities = await storage.getEntities();
+    const active = entities.find((entity) => entity.entityName === "0xUnihaxor");
+    assert.ok(active);
+    assert.deepEqual(active.wallets.map((wallet) => wallet.walletAddress), currentWallets);
+  } finally {
+    await storage.close();
+  }
+
+  const verifyDb = new Database(resolveWorkspacePaths(cwd).dbFile);
+  try {
+    const duplicateWalletCounts = verifyDb
+      .prepare(
+        `SELECT e.id, COUNT(w.wallet_address) as walletCount
+         FROM entities e
+         LEFT JOIN entity_wallets w ON w.entity_id = e.id
+         WHERE lower(e.entity_name) = lower('0xUnihaxor')
+         GROUP BY e.id
+         ORDER BY e.id`,
+      )
+      .all() as Array<{ id: number; walletCount: number }>;
+    assert.ok(duplicateWalletCounts.length >= 2);
+    assert.deepEqual(
+      duplicateWalletCounts.map((row) => Number(row.walletCount)),
+      duplicateWalletCounts.map(() => currentWallets.length),
+    );
+  } finally {
+    verifyDb.close();
     if (previousDatabaseUrl == null) {
       delete process.env.DATABASE_URL;
     } else {

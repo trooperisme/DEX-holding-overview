@@ -170,6 +170,20 @@ function createSqliteStorage(cwd: string): StorageAdapter {
         updated_at = @updatedAt
     WHERE id = @id
   `);
+  const findDuplicateEntitiesForImport = db.prepare(`
+    SELECT id
+    FROM entities
+    WHERE lower(entity_name) = lower(@entityName)
+    ORDER BY id ASC
+  `);
+  const updateDuplicateEntityForImport = db.prepare(`
+    UPDATE entities
+    SET entity_name = @entityName,
+        resolved_label = @resolvedLabel,
+        link_type = @linkType,
+        updated_at = @updatedAt
+    WHERE id = @id
+  `);
   const clearWalletsForEntity = db.prepare(`DELETE FROM entity_wallets WHERE entity_id = ?`);
   const insertWallet = db.prepare(`
     INSERT INTO entity_wallets (entity_id, wallet_address, wallet_index, created_at)
@@ -298,15 +312,27 @@ function createSqliteStorage(cwd: string): StorageAdapter {
         });
       }
 
-      clearWalletsForEntity.run(result.id);
-      entity.walletAddresses.forEach((walletAddress, walletIndex) => {
-        insertWallet.run({
-          entityId: result.id,
-          walletAddress,
-          walletIndex,
-          createdAt: now,
+      const duplicateEntities = findDuplicateEntitiesForImport.all({ entityName: entity.entityName }) as Array<{ id: number }>;
+      for (const duplicate of duplicateEntities) {
+        if (duplicate.id !== result.id) {
+          updateDuplicateEntityForImport.run({
+            id: duplicate.id,
+            entityName: entity.entityName,
+            resolvedLabel: entity.resolvedLabel,
+            linkType: entity.linkType,
+            updatedAt: now,
+          });
+        }
+        clearWalletsForEntity.run(duplicate.id);
+        entity.walletAddresses.forEach((walletAddress, walletIndex) => {
+          insertWallet.run({
+            entityId: duplicate.id,
+            walletAddress,
+            walletIndex,
+            createdAt: now,
+          });
         });
-      });
+      }
     }
   });
 
