@@ -1,6 +1,8 @@
 import { ZapperTokenBalance } from "./types";
 
 export const SOLANA_CHAIN_ID = 1151111081;
+const SOLSCAN_RENDER_WAIT_MS = Math.max(1000, Number(process.env.SOLSCAN_RENDER_WAIT_MS || 15000));
+const SOLSCAN_SCRAPE_TIMEOUT_MS = Math.max(SOLSCAN_RENDER_WAIT_MS + 5000, Number(process.env.SOLSCAN_SCRAPE_TIMEOUT_MS || 120000));
 
 export type SolscanPortfolioHolding = {
   tokenName: string;
@@ -127,7 +129,18 @@ export async function fetchSolscanTopTokenBalances(
       proxy: "auto",
       removeBase64Images: true,
       blockAds: true,
-      waitFor: 8000,
+      waitFor: SOLSCAN_RENDER_WAIT_MS,
+      timeout: SOLSCAN_SCRAPE_TIMEOUT_MS,
+      actions: [
+        {
+          type: "wait",
+          selector: "table",
+        },
+        {
+          type: "wait",
+          milliseconds: 1500,
+        },
+      ],
     }),
   });
 
