@@ -1,9 +1,21 @@
 import { MoniScoreData } from "./types";
 
-const MONI_RENDER_WAIT_MS = Math.max(0, Number(process.env.MONI_RENDER_WAIT_MS || 12000));
-const MONI_RENDER_TIMEOUT_MS = Math.max(1000, Number(process.env.MONI_RENDER_TIMEOUT_MS || 120000));
+function nonNegativeNumber(value: string | undefined, fallback: number): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+}
+
+function positiveInteger(value: number | string | undefined, fallback: number): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.trunc(parsed) : fallback;
+}
+
+const MONI_RENDER_WAIT_MS = nonNegativeNumber(process.env.MONI_RENDER_WAIT_MS, 5000);
+const MONI_RENDER_TIMEOUT_MS = Math.max(1000, nonNegativeNumber(process.env.MONI_RENDER_TIMEOUT_MS, 20000));
 const MONI_SCORE_SELECTOR = '[class*="scoreModule_scoreBlockMoni"]';
 const MONI_LOOKUP_TIMEOUT_FLOOR_MS = Math.min(MONI_RENDER_TIMEOUT_MS, MONI_RENDER_WAIT_MS + 5000);
+const MONI_ATTEMPTS_PER_CANDIDATE = positiveInteger(process.env.MONI_ATTEMPTS_PER_CANDIDATE, 1);
+const MONI_MAX_CANDIDATES_PER_TOKEN = positiveInteger(process.env.MONI_MAX_CANDIDATES_PER_TOKEN, 2);
 
 export function buildMoniUrl(twitterHandle: string): string {
   return `https://discover.getmoni.io/${encodeURIComponent(twitterHandle)}`;
@@ -25,6 +37,8 @@ type MoniCandidateOptions = {
 type MoniFetchOptions = MoniCandidateOptions & {
   signal?: AbortSignal;
   timeoutMs?: number;
+  attemptsPerCandidate?: number;
+  maxCandidates?: number;
 };
 
 function alphanumeric(value: string): string {
@@ -177,8 +191,13 @@ export async function fetchMoniScoreDataForToken(
   optionsOrSignal?: MoniFetchOptions | AbortSignal,
 ): Promise<MoniScoreData | null> {
   const options = normalizeFetchOptions(optionsOrSignal);
-  for (const handle of buildMoniHandleCandidates(twitterHandle, tokenName, options)) {
-    for (let attempt = 0; attempt < 2; attempt += 1) {
+  const attemptsPerCandidate = positiveInteger(options.attemptsPerCandidate, MONI_ATTEMPTS_PER_CANDIDATE);
+  const maxCandidates = positiveInteger(options.maxCandidates, MONI_MAX_CANDIDATES_PER_TOKEN);
+  const candidates = buildMoniHandleCandidates(twitterHandle, tokenName, options).slice(0, maxCandidates);
+  let lastError: unknown = null;
+
+  for (const handle of candidates) {
+    for (let attempt = 0; attempt < attemptsPerCandidate; attempt += 1) {
       const controller = options.timeoutMs ? new AbortController() : null;
       let didTimeout = false;
       const timeout = controller
@@ -193,10 +212,15 @@ export async function fetchMoniScoreDataForToken(
         const score = await fetchMoniScoreData(firecrawlApiKey, handle, controller?.signal || options.signal);
         if (score) return score;
       } catch (error) {
-        if (didTimeout) {
-          throw new Error(`Moni scrape timed out for @${handle}`);
+        if (options.signal?.aborted) {
+          throw error;
         }
-        throw error;
+        if (didTimeout) {
+          lastError = new Error(`Moni scrape timed out for @${handle}`);
+          break;
+        }
+        lastError = error;
+        break;
       } finally {
         if (timeout) clearTimeout(timeout);
         options.signal?.removeEventListener("abort", relayAbort);
@@ -204,5 +228,8 @@ export async function fetchMoniScoreDataForToken(
     }
   }
 
+  if (lastError) {
+    throw lastError;
+  }
   return null;
 }

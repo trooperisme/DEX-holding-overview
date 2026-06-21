@@ -63,7 +63,7 @@ function getEntityConcurrency(totalEntities: number): number {
 }
 
 function getMoniConcurrency(totalHandles: number): number {
-  const configured = Number(process.env.MONI_REFRESH_CONCURRENCY || (process.env.VERCEL ? 4 : 2));
+  const configured = Number(process.env.MONI_REFRESH_CONCURRENCY || 6);
   const concurrency = Number.isFinite(configured) ? Math.trunc(configured) : 1;
   return Math.max(1, Math.min(totalHandles, concurrency));
 }

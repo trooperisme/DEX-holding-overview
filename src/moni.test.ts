@@ -86,12 +86,58 @@ test("parseMoniMarkdown returns null when the score block is missing", () => {
 });
 
 test("getMoniLookupTimeoutMs never allows a timeout shorter than the render wait floor", () => {
-  assert.equal(getMoniLookupTimeoutMs(), 17000);
-  assert.equal(getMoniLookupTimeoutMs(8000), 17000);
+  assert.equal(getMoniLookupTimeoutMs(), 10000);
+  assert.equal(getMoniLookupTimeoutMs(8000), 10000);
   assert.equal(getMoniLookupTimeoutMs(30000), 30000);
 });
 
-test("fetchMoniScoreDataForToken reports internal timeouts as regular errors", async () => {
+test("fetchMoniScoreDataForToken tries fallback candidates after an internal timeout", async () => {
+  const originalFetch = global.fetch;
+  const requestedUrls: string[] = [];
+  try {
+    global.fetch = ((_: string | URL | Request, init?: RequestInit) =>
+      new Promise<Response>((resolve, reject) => {
+        const body = JSON.parse(String(init?.body || "{}")) as { url?: string };
+        requestedUrls.push(String(body.url || ""));
+        if (requestedUrls.length === 1) {
+          init?.signal?.addEventListener("abort", () => {
+            reject(new DOMException("This operation was aborted", "AbortError"));
+          });
+          return;
+        }
+
+        resolve(
+          new Response(
+            JSON.stringify({
+              success: true,
+              data: {
+                markdown: `
+Moni Score
+Level: 3. Developing
+722
+`,
+              },
+            }),
+            {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
+            },
+          ),
+        );
+      })) as unknown as typeof fetch;
+
+    const score = await fetchMoniScoreDataForToken("test-key", "pumpfun", "Pump", {
+      timeoutMs: 5,
+    });
+
+    assert.equal(score?.moniScore, 722);
+    assert.deepEqual(requestedUrls, ["https://discover.getmoni.io/pumpfun", "https://discover.getmoni.io/PumpFUN"]);
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test("fetchMoniScoreDataForToken reports exhausted internal timeouts as regular errors", async () => {
   const originalFetch = global.fetch;
   try {
     global.fetch = ((_: string | URL | Request, init?: RequestInit) =>
@@ -105,6 +151,7 @@ test("fetchMoniScoreDataForToken reports internal timeouts as regular errors", a
       () =>
         fetchMoniScoreDataForToken("test-key", "pumpfun", "Pump", {
           timeoutMs: 5,
+          maxCandidates: 1,
         }),
       /Moni scrape timed out for @pumpfun/,
     );
