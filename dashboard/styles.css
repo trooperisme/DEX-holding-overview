@@ -447,6 +447,11 @@ td {
   white-space: nowrap;
 }
 
+td:nth-child(2) {
+  min-width: 220px;
+  max-width: 420px;
+}
+
 th {
   color: var(--muted);
   font-size: 0.82rem;
@@ -520,6 +525,7 @@ th {
 .token-cell {
   display: grid;
   gap: 6px;
+  min-width: 0;
 }
 
 .ticker-mainline {
@@ -589,6 +595,11 @@ th {
 }
 
 .token-cell strong {
+  display: block;
+  max-width: min(38vw, 420px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: 1rem;
 }
 
@@ -1125,6 +1136,15 @@ th {
   th,
   td {
     padding: 14px 16px;
+  }
+
+  td:nth-child(2) {
+    min-width: 180px;
+    max-width: 280px;
+  }
+
+  .token-cell strong {
+    max-width: 240px;
   }
 
   .copy-contract-button {

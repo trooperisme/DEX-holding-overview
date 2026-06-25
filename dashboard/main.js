@@ -56,6 +56,21 @@ function escapeHtml(value) {
     .replaceAll("'", "&#039;");
 }
 
+function getDisplayTokenName(row) {
+  const rawName = String(row?.tokenName || "").trim();
+  const fallback = String(row?.tokenSymbol || "Unknown token").trim() || "Unknown token";
+  const tokenAddress = String(row?.tokenAddress || "").trim();
+
+  if (!rawName) return fallback;
+
+  if (tokenAddress && rawName.toLowerCase().endsWith(tokenAddress.toLowerCase())) {
+    const stripped = rawName.slice(0, -tokenAddress.length).trim();
+    return stripped || fallback;
+  }
+
+  return rawName;
+}
+
 function fmtUsd(value) {
   const numeric = Number(value || 0);
   if (!Number.isFinite(numeric)) return "$0.00";
@@ -832,7 +847,7 @@ function buildHolderPanel(tokenKey) {
 function buildDrilldownRows(tokenKey) {
   const row = state.rows.find((item) => item.tokenKey === tokenKey);
   const activeTab = state.activeDrilldownTab === "trend" ? "trend" : "holders";
-  const title = row ? `${row.tokenSymbol} · ${row.tokenName}` : "Token Detail";
+  const title = row ? `${row.tokenSymbol} · ${getDisplayTokenName(row)}` : "Token Detail";
   const body = activeTab === "trend" ? buildScoreTrendPanel(tokenKey) : buildHolderPanel(tokenKey);
 
   return `
@@ -898,6 +913,7 @@ function renderTable() {
   els.tableBody.innerHTML = rows
     .map((row) => {
       const isOpen = row.tokenKey === state.openTokenKey;
+      const displayTokenName = getDisplayTokenName(row);
       const networkBadge = row.networkName ? `<span class="network-badge">${escapeHtml(row.networkName)}</span>` : "";
       const copyButton = row.tokenAddress
         ? `
@@ -925,7 +941,7 @@ function renderTable() {
           </td>
           <td>
             <div class="token-cell">
-              <strong>${escapeHtml(row.tokenName)}</strong>
+              <strong title="${escapeHtml(displayTokenName)}">${escapeHtml(displayTokenName)}</strong>
               <span>Click to view score trend and entity holders</span>
             </div>
           </td>
