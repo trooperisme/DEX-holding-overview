@@ -59,13 +59,33 @@ function escapeHtml(value) {
 function getDisplayTokenName(row) {
   const rawName = String(row?.tokenName || "").trim();
   const fallback = String(row?.tokenSymbol || "Unknown token").trim() || "Unknown token";
-  const tokenAddress = String(row?.tokenAddress || "").trim();
+  const tokenKeyAddress = String(row?.tokenKey || "").split(":").pop() || "";
+  const tokenAddressCandidates = [
+    String(row?.tokenAddress || "").trim(),
+    tokenKeyAddress.trim(),
+  ].filter(Boolean);
 
   if (!rawName) return fallback;
 
-  if (tokenAddress && rawName.toLowerCase().endsWith(tokenAddress.toLowerCase())) {
-    const stripped = rawName.slice(0, -tokenAddress.length).trim();
+  for (const tokenAddress of tokenAddressCandidates) {
+    if (rawName.toLowerCase().endsWith(tokenAddress.toLowerCase())) {
+      const stripped = rawName.slice(0, -tokenAddress.length).trim();
+      return stripped || fallback;
+    }
+  }
+
+  const pumpMintSuffix = rawName.match(/[1-9A-HJ-NP-Za-km-z]{32,44}pump$/);
+  if (pumpMintSuffix && pumpMintSuffix.index && pumpMintSuffix.index > 0) {
+    const stripped = rawName.slice(0, pumpMintSuffix.index).trim();
     return stripped || fallback;
+  }
+
+  const symbol = String(row?.tokenSymbol || "").trim();
+  if (symbol && rawName.includes(symbol)) {
+    const suffixAfterSymbol = rawName.slice(rawName.lastIndexOf(symbol) + symbol.length);
+    if (/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(suffixAfterSymbol)) {
+      return rawName.slice(0, rawName.length - suffixAfterSymbol.length).trim() || fallback;
+    }
   }
 
   return rawName;

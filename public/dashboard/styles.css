@@ -436,7 +436,9 @@ select:focus {
 
 table {
   width: 100%;
+  min-width: 1280px;
   border-collapse: collapse;
+  table-layout: fixed;
 }
 
 th,
@@ -448,8 +450,8 @@ td {
 }
 
 td:nth-child(2) {
-  min-width: 220px;
-  max-width: 420px;
+  width: 34%;
+  overflow: hidden;
 }
 
 th {
@@ -519,6 +521,7 @@ th {
   display: grid;
   gap: 6px;
   min-width: 0;
+  width: 100%;
 }
 
 .ticker-mainline {
@@ -589,7 +592,7 @@ th {
 
 .token-cell strong {
   display: block;
-  max-width: min(38vw, 420px);
+  max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1132,12 +1135,11 @@ th {
   }
 
   td:nth-child(2) {
-    min-width: 180px;
-    max-width: 280px;
+    width: 280px;
   }
 
   .token-cell strong {
-    max-width: 240px;
+    max-width: 100%;
   }
 
   .copy-contract-button {
