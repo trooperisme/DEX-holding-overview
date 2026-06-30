@@ -49,6 +49,39 @@ function splitMarkdownTableRow(line: string): string[] {
     .map((cell) => cell.trim());
 }
 
+export function normalizeSolscanTokenName(input: {
+  tokenName: string;
+  tokenSymbol: string;
+  tokenAddress: string;
+}): string {
+  const rawName = String(input.tokenName || "").trim();
+  const fallback = String(input.tokenSymbol || "Unknown token").trim() || "Unknown token";
+  const tokenAddress = String(input.tokenAddress || "").trim();
+
+  if (!rawName) return fallback;
+
+  if (tokenAddress && rawName.toLowerCase().endsWith(tokenAddress.toLowerCase())) {
+    const stripped = rawName.slice(0, -tokenAddress.length).trim();
+    return stripped || fallback;
+  }
+
+  const pumpMintSuffix = rawName.match(/[1-9A-HJ-NP-Za-km-z]{32,44}pump$/);
+  if (pumpMintSuffix && pumpMintSuffix.index && pumpMintSuffix.index > 0) {
+    const stripped = rawName.slice(0, pumpMintSuffix.index).trim();
+    return stripped || fallback;
+  }
+
+  const tokenSymbol = String(input.tokenSymbol || "").trim();
+  if (tokenSymbol && rawName.includes(tokenSymbol)) {
+    const suffixAfterSymbol = rawName.slice(rawName.lastIndexOf(tokenSymbol) + tokenSymbol.length);
+    if (/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(suffixAfterSymbol)) {
+      return rawName.slice(0, rawName.length - suffixAfterSymbol.length).trim() || fallback;
+    }
+  }
+
+  return rawName;
+}
+
 export function parseSolscanPortfolioMarkdown(markdown: string, minBalanceUsd = 111): SolscanPortfolioHolding[] {
   const rows: SolscanPortfolioHolding[] = [];
   const lines = markdown.split(/\r?\n/);
@@ -64,9 +97,14 @@ export function parseSolscanPortfolioMarkdown(markdown: string, minBalanceUsd = 
     if (!tokenLink || !tokenAddress || balanceUsd == null) continue;
     if (balanceUsd < minBalanceUsd) continue;
 
+    const tokenSymbol = cells[2];
     rows.push({
-      tokenName: tokenLink.label,
-      tokenSymbol: cells[2],
+      tokenName: normalizeSolscanTokenName({
+        tokenName: tokenLink.label,
+        tokenSymbol,
+        tokenAddress,
+      }),
+      tokenSymbol,
       tokenAddress,
       balanceUsd,
       balance: cells[3].replace(/,/g, ""),
@@ -79,7 +117,11 @@ export function parseSolscanPortfolioMarkdown(markdown: string, minBalanceUsd = 
 export function toSolanaTokenBalance(holding: SolscanPortfolioHolding): ZapperTokenBalance {
   return {
     tokenSymbol: holding.tokenSymbol || "UNKNOWN",
-    tokenName: holding.tokenName || "Unknown token",
+    tokenName: normalizeSolscanTokenName({
+      tokenName: holding.tokenName,
+      tokenSymbol: holding.tokenSymbol,
+      tokenAddress: holding.tokenAddress,
+    }),
     tokenAddress: holding.tokenAddress,
     networkName: "Solana",
     chainId: SOLANA_CHAIN_ID,

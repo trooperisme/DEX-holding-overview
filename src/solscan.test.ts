@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  normalizeSolscanTokenName,
   parseSolscanPortfolioMarkdown,
   SOLANA_CHAIN_ID,
   toSolanaTokenBalance,
@@ -37,6 +38,33 @@ test("parseSolscanPortfolioMarkdown extracts top holdings above the USD threshol
     "tokenName",
     "tokenSymbol",
   ]);
+});
+
+test("parseSolscanPortfolioMarkdown strips Solana mint suffixes from token names", () => {
+  const markdown = `
+| Token Account | Token Name | Symbol | Token Balance | Price | Value | Percentage |
+| --- | --- | --- | --- | --- | --- | --- |
+| [8eeb](https://solscan.io/account/8eeb) | [Collector CryptCARDSccUMFKoPRZxt5vt3ksUbxEFEcnZ3H2pd3dKxYjp](https://solscan.io/token/CARDSccUMFKoPRZxt5vt3ksUbxEFEcnZ3H2pd3dKxYjp) | CARDS | 1,551,270.2 | $0.2287 | $354,846.42 | 89.42% |
+| [9abc](https://solscan.io/account/9abc) | [The Black Bull9cRCn9rGT8V2imeM2BaKs13yhMEais3ruM3rPvTGpump](https://solscan.io/token/9cRCn9rGT8V2imeM2BaKs13yhMEais3ruM3rPvTGpump) | ANSEM | 100 | $1 | $10,000 | 1% |
+`;
+
+  const rows = parseSolscanPortfolioMarkdown(markdown, 111);
+
+  assert.deepEqual(
+    rows.map((row) => row.tokenName),
+    ["Collector Crypt", "The Black Bull"],
+  );
+});
+
+test("normalizeSolscanTokenName keeps legitimate pump names", () => {
+  assert.equal(
+    normalizeSolscanTokenName({
+      tokenName: "DONALD J. PUMP",
+      tokenSymbol: "DJPUMP",
+      tokenAddress: "36CdR7EzFZgu4aEswP6xJy11x3y4sKN62Fc84CGdpump",
+    }),
+    "DONALD J. PUMP",
+  );
 });
 
 test("toSolanaTokenBalance converts Solscan holdings into the existing balance shape", () => {
