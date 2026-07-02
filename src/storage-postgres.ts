@@ -13,6 +13,7 @@ import {
   TokenScorePoint,
 } from "./types";
 import { SnapshotTokenForEnrichment, SnapshotUpdate, StorageAdapter } from "./storage-types";
+import { normalizeTokenName } from "./token-name";
 
 let sharedPool: Pool | null = null;
 
@@ -81,6 +82,16 @@ function mapSnapshot(row: any): SnapshotRecord {
     createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : String(row.created_at),
     finishedAt: row.finished_at ? (row.finished_at instanceof Date ? row.finished_at.toISOString() : String(row.finished_at)) : null,
   };
+}
+
+function normalizeRawHoldingTokenName(row: RawHoldingRecord): string {
+  return normalizeTokenName({
+    tokenName: row.tokenName,
+    tokenSymbol: row.tokenSymbol,
+    tokenAddress: row.tokenAddress,
+    tokenKey: row.tokenKey,
+    networkName: row.networkName,
+  });
 }
 
 function mapEntity(row: any): EntityRecord {
@@ -357,7 +368,7 @@ export function createPostgresStorage(): StorageAdapter {
               row.entityId,
               row.tokenKey,
               row.tokenSymbol,
-              row.tokenName,
+              normalizeRawHoldingTokenName(row),
               row.tokenAddress,
               row.networkName,
               row.chainId,

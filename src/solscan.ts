@@ -1,4 +1,5 @@
 import { ZapperTokenBalance } from "./types";
+import { normalizeTokenName } from "./token-name";
 
 export const SOLANA_CHAIN_ID = 1151111081;
 const SOLSCAN_RENDER_WAIT_MS = Math.max(1000, Number(process.env.SOLSCAN_RENDER_WAIT_MS || 15000));
@@ -54,32 +55,10 @@ export function normalizeSolscanTokenName(input: {
   tokenSymbol: string;
   tokenAddress: string;
 }): string {
-  const rawName = String(input.tokenName || "").trim();
-  const fallback = String(input.tokenSymbol || "Unknown token").trim() || "Unknown token";
-  const tokenAddress = String(input.tokenAddress || "").trim();
-
-  if (!rawName) return fallback;
-
-  if (tokenAddress && rawName.toLowerCase().endsWith(tokenAddress.toLowerCase())) {
-    const stripped = rawName.slice(0, -tokenAddress.length).trim();
-    return stripped || fallback;
-  }
-
-  const pumpMintSuffix = rawName.match(/[1-9A-HJ-NP-Za-km-z]{32,44}pump$/);
-  if (pumpMintSuffix && pumpMintSuffix.index && pumpMintSuffix.index > 0) {
-    const stripped = rawName.slice(0, pumpMintSuffix.index).trim();
-    return stripped || fallback;
-  }
-
-  const tokenSymbol = String(input.tokenSymbol || "").trim();
-  if (tokenSymbol && rawName.includes(tokenSymbol)) {
-    const suffixAfterSymbol = rawName.slice(rawName.lastIndexOf(tokenSymbol) + tokenSymbol.length);
-    if (/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(suffixAfterSymbol)) {
-      return rawName.slice(0, rawName.length - suffixAfterSymbol.length).trim() || fallback;
-    }
-  }
-
-  return rawName;
+  return normalizeTokenName({
+    ...input,
+    networkName: "Solana",
+  });
 }
 
 export function parseSolscanPortfolioMarkdown(markdown: string, minBalanceUsd = 111): SolscanPortfolioHolding[] {

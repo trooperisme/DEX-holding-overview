@@ -2,6 +2,7 @@ import { resolveWorkspacePaths } from "./runtime-paths";
 import { withOpportunityScore } from "./scoring";
 import { createPostgresStorage } from "./storage-postgres";
 import { SnapshotTokenForEnrichment, SnapshotUpdate, StorageAdapter } from "./storage-types";
+import { normalizeTokenName } from "./token-name";
 import {
   EntityFetchRunRecord,
   EntityRecord,
@@ -14,6 +15,16 @@ import {
   TokenOverviewRow,
   TokenScorePoint,
 } from "./types";
+
+function normalizeRawHoldingTokenName(row: RawHoldingRecord): string {
+  return normalizeTokenName({
+    tokenName: row.tokenName,
+    tokenSymbol: row.tokenSymbol,
+    tokenAddress: row.tokenAddress,
+    tokenKey: row.tokenKey,
+    networkName: row.networkName,
+  });
+}
 
 export function createStorage(cwd: string): StorageAdapter {
   if (process.env.DATABASE_URL?.trim()) {
@@ -339,7 +350,10 @@ function createSqliteStorage(cwd: string): StorageAdapter {
   const insertRawHoldingsForEntity = db.transaction((snapshotId: number, entityId: number, rows: RawHoldingRecord[]) => {
     deleteRawForSnapshotEntity.run(snapshotId, entityId);
     for (const row of rows) {
-      insertRawHoldingStmt.run(row);
+      insertRawHoldingStmt.run({
+        ...row,
+        tokenName: normalizeRawHoldingTokenName(row),
+      });
     }
   });
 

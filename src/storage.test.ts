@@ -215,6 +215,50 @@ test("token aggregations collapse duplicate database rows for the same logical e
   }
 });
 
+test("insertRawHoldingsForEntity normalizes Solana token names before storage", async () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "dex-storage-test-"));
+  const previousDatabaseUrl = process.env.DATABASE_URL;
+  delete process.env.DATABASE_URL;
+
+  const storage = createStorage(cwd);
+  try {
+    await storage.replaceEntities([
+      {
+        entityName: "solana-tester",
+        fullZapperLink: "https://zapper.xyz/account/8eebNyWyrqBGbNwhwWM7yAoFxgUrgpg4UNGS4A33RQ6g",
+        resolvedLabel: "solana-tester",
+        linkType: "account",
+        walletAddresses: ["8eebNyWyrqBGbNwhwWM7yAoFxgUrgpg4UNGS4A33RQ6g"],
+      },
+    ]);
+    const [entity] = await storage.getEntities();
+    const snapshot = await storage.createSnapshot(1, null);
+    const tokenAddress = "9cRCn9rGT8V2imeM2BaKs13yhMEais3ruM3rPvTGpump";
+
+    await storage.insertRawHoldingsForEntity(snapshot, entity.id, [
+      tokenHolding(snapshot, entity.id, {
+        tokenKey: `1151111081:${tokenAddress.toLowerCase()}`,
+        tokenSymbol: "ANSEM",
+        tokenName: `The Black Bull${tokenAddress}`,
+        tokenAddress,
+        networkName: "Solana",
+        chainId: 1151111081,
+      }),
+    ]);
+
+    const [overview] = await storage.getOverview(snapshot, 111, 1, 11111, null);
+    assert.equal(overview?.tokenName, "The Black Bull");
+  } finally {
+    await storage.close();
+    if (previousDatabaseUrl == null) {
+      delete process.env.DATABASE_URL;
+    } else {
+      process.env.DATABASE_URL = previousDatabaseUrl;
+    }
+    fs.rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
 test("replaceEntities updates an existing named entity when its Zapper bundle link changes", async () => {
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "dex-storage-test-"));
   const previousDatabaseUrl = process.env.DATABASE_URL;
