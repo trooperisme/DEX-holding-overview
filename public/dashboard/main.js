@@ -139,6 +139,12 @@ function parseMarketCapFilterInput() {
   return Number.isFinite(numeric) && numeric > 0 ? numeric : null;
 }
 
+function getMarketCapFilterMessage(value) {
+  return value
+    ? `Market cap filter applied: < ${fmtUsd(value)}; unknown market cap included.`
+    : "Market cap filter cleared. Showing tokens without a market cap constraint.";
+}
+
 function clearOpenRows() {
   state.openTokenKey = null;
   state.activeDrilldownTab = "holders";
@@ -1328,6 +1334,7 @@ els.applyMarketCapButton.addEventListener("click", async () => {
   state.maxMarketCapUsd = parseMarketCapFilterInput();
   clearOpenRows();
   await loadOverview();
+  setBanner(getMarketCapFilterMessage(state.maxMarketCapUsd), "success");
 });
 
 els.resetMarketCapButton.addEventListener("click", async () => {
@@ -1335,6 +1342,7 @@ els.resetMarketCapButton.addEventListener("click", async () => {
   state.maxMarketCapUsd = null;
   clearOpenRows();
   await loadOverview();
+  setBanner(getMarketCapFilterMessage(state.maxMarketCapUsd), "success");
 });
 
 els.maxMarketCapInput.addEventListener("keydown", async (event) => {
@@ -1342,6 +1350,7 @@ els.maxMarketCapInput.addEventListener("keydown", async (event) => {
   state.maxMarketCapUsd = parseMarketCapFilterInput();
   clearOpenRows();
   await loadOverview();
+  setBanner(getMarketCapFilterMessage(state.maxMarketCapUsd), "success");
 });
 
 async function init() {
