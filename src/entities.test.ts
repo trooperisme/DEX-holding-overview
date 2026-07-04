@@ -28,6 +28,15 @@ test("loadImportedEntities parses the seed csv", () => {
   assert.equal(uga2Vegas.walletAddresses.length, 4);
   assert.ok(uga2Vegas.walletAddresses.includes("0xa1c9d41719c4ffd99463f1cfa579d9b6a96b50c6"));
   assert.ok(uga2Vegas.walletAddresses.includes("zczyNknQCTwCeiAo9QekT3wwJbaW6NUZmbPnJsFk6B1"));
+  const vydamo = rows.find((row) => row.entityName === "vydamo");
+  assert.ok(vydamo);
+  assert.equal(vydamo.resolvedLabel, "vydamo");
+  assert.deepEqual(vydamo.walletAddresses, [
+    "0x5ae769ec6f156d07ed916d9c176a3dba2364ff1c",
+    "0x9a9fc8ecda414a2b5d47e340a48fcbc20114ea1b",
+    "0xc3af937aaffe35e65bf5357e35ced38c859ea145",
+    "EZDftRcPqkR9PjaCT3LNGpgZHEa2GfryR84UZJX62y82",
+  ]);
   assert.deepEqual(
     rows.find((row) => row.entityName === "Base Specialist | tommy 🌙")?.walletAddresses.slice(-1),
     ["0x80dc3a3f5302d478f9b8168aa439ba35f0425abe"],
