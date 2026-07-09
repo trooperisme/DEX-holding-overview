@@ -69,6 +69,7 @@ test("loadImportedEntities parses the seed csv", () => {
     ],
     ["Base Specialist | tommy 🌙", ["0x80dc3a3f5302d478f9b8168aa439ba35f0425abe"]],
     ["pendle 4 alfafa", ["C4jdqASx8TDSV3LPtdJt5Z8CVBqjJWrezopkz4LLJ4Dr", "Gt4EbY5Se7z8e4eb9SkF3Rrc6Eoojr6LePPLesmwH9B"]],
+    ["Tux | DCDAO", ["0x2ac116674c092d3c55f2fa0d95923e8b34131814"]],
   ]);
 
   for (const [entityName, wallets] of expectedNewWalletsByEntity) {
