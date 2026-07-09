@@ -9,6 +9,7 @@ import { createRefreshJobManager } from "./refresh-jobs";
 import { resolveWorkspacePaths } from "./runtime-paths";
 import { withOpportunityScore } from "./scoring";
 import { SOLANA_CHAIN_ID } from "./solscan";
+import { getLatestUsableSnapshot } from "./snapshot-selection";
 import { createStorage } from "./storage";
 import {
   MoniScoreData,
@@ -443,14 +444,6 @@ function stripSolscanHolders(row: TokenOverviewRow | SolscanOverviewRow): TokenO
 
 function incompleteSnapshotStatus(snapshot: SnapshotRecord): SnapshotStatus {
   return snapshot.entitiesCompleted > 0 || snapshot.totalRows > 0 ? "partial" : "failed";
-}
-
-function isUsableSnapshot(snapshot: SnapshotRecord): boolean {
-  return (snapshot.status === "success" || snapshot.status === "partial") && snapshot.totalRows > 0;
-}
-
-function getLatestUsableSnapshot(snapshots: SnapshotRecord[]): SnapshotRecord | null {
-  return snapshots.find(isUsableSnapshot) || snapshots[0] || null;
 }
 
 function snapshotToRefreshJob(snapshot: SnapshotRecord) {

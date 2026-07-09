@@ -259,6 +259,53 @@ test("insertRawHoldingsForEntity normalizes Solana token names before storage", 
   }
 });
 
+test("getSnapshotSummaries includes Solana and non-Solana row coverage", async () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "dex-storage-test-"));
+  const previousDatabaseUrl = process.env.DATABASE_URL;
+  delete process.env.DATABASE_URL;
+
+  const storage = createStorage(cwd);
+  try {
+    await storage.replaceEntities([
+      {
+        entityName: "coverage-tester",
+        fullZapperLink: "https://zapper.xyz/bundle/0xabc,So11111111111111111111111111111111111111112?label=coverage",
+        resolvedLabel: "coverage-tester",
+        linkType: "bundle",
+        walletAddresses: ["0xabc", "So11111111111111111111111111111111111111112"],
+      },
+    ]);
+    const [entity] = await storage.getEntities();
+    const snapshot = await storage.createSnapshot(1, null);
+    const solanaAddress = "9cRCn9rGT8V2imeM2BaKs13yhMEais3ruM3rPvTGpump";
+
+    await storage.insertRawHoldingsForEntity(snapshot, entity.id, [
+      tokenHolding(snapshot, entity.id),
+      tokenHolding(snapshot, entity.id, {
+        tokenKey: `1151111081:${solanaAddress.toLowerCase()}`,
+        tokenSymbol: "ANSEM",
+        tokenName: "The Black Bull",
+        tokenAddress: solanaAddress,
+        networkName: "Solana",
+        chainId: 1151111081,
+      }),
+    ]);
+
+    const [summary] = await storage.getSnapshotSummaries();
+    assert.equal(summary.id, snapshot);
+    assert.equal(summary.solanaRows, 1);
+    assert.equal(summary.nonSolanaRows, 1);
+  } finally {
+    await storage.close();
+    if (previousDatabaseUrl == null) {
+      delete process.env.DATABASE_URL;
+    } else {
+      process.env.DATABASE_URL = previousDatabaseUrl;
+    }
+    fs.rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
 test("replaceEntities updates an existing named entity when its Zapper bundle link changes", async () => {
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "dex-storage-test-"));
   const previousDatabaseUrl = process.env.DATABASE_URL;

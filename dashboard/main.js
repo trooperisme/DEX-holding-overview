@@ -1001,8 +1001,16 @@ async function loadSnapshots() {
   const selectedSnapshot = state.snapshots.find((item) => item.id === state.selectedSnapshotId) || null;
   const selectedSnapshotIsEmptyFailure =
     selectedSnapshot?.status === "failed" && Number(selectedSnapshot.totalRows || 0) === 0;
+  const selectedSnapshotMissingEvmCoverage =
+    selectedSnapshot &&
+    Number(selectedSnapshot.totalRows || 0) > 0 &&
+    Number(selectedSnapshot.nonSolanaRows || 0) === 0 &&
+    Number(payload.latest?.nonSolanaRows || 0) > 0;
 
-  if ((!state.selectedSnapshotId || !selectedSnapshot || selectedSnapshotIsEmptyFailure) && payload.latest?.id) {
+  if (
+    (!state.selectedSnapshotId || !selectedSnapshot || selectedSnapshotIsEmptyFailure || selectedSnapshotMissingEvmCoverage) &&
+    payload.latest?.id
+  ) {
     state.selectedSnapshotId = payload.latest.id;
   }
   renderSnapshots();

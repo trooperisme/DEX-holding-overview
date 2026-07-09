@@ -34,6 +34,8 @@ export type SnapshotRecord = {
   entitiesCompleted: number;
   entitiesFailed: number;
   totalRows: number;
+  solanaRows?: number;
+  nonSolanaRows?: number;
   errorMessage: string | null;
   createdAt: string;
   finishedAt: string | null;

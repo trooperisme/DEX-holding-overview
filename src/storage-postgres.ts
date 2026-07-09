@@ -78,6 +78,8 @@ function mapSnapshot(row: any): SnapshotRecord {
     entitiesCompleted: Number(row.entities_completed),
     entitiesFailed: Number(row.entities_failed),
     totalRows: Number(row.total_rows),
+    solanaRows: numberOrNull(row.solana_rows) ?? undefined,
+    nonSolanaRows: numberOrNull(row.non_solana_rows) ?? undefined,
     errorMessage: row.error_message,
     createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : String(row.created_at),
     finishedAt: row.finished_at ? (row.finished_at instanceof Date ? row.finished_at.toISOString() : String(row.finished_at)) : null,
@@ -476,8 +478,21 @@ export function createPostgresStorage(): StorageAdapter {
     async getSnapshotSummaries(): Promise<SnapshotRecord[]> {
       const result = await getPool().query(
         `SELECT id, status, zapper_key_label, total_entities, entities_completed, entities_failed,
-                total_rows, error_message, created_at, finished_at
-         FROM ${table("holding_snapshots")}
+                total_rows,
+                (
+                  SELECT COUNT(*)
+                  FROM ${table("raw_holdings")} rh
+                  WHERE rh.snapshot_id = hs.id
+                    AND rh.chain_id = 1151111081
+                ) as solana_rows,
+                (
+                  SELECT COUNT(*)
+                  FROM ${table("raw_holdings")} rh
+                  WHERE rh.snapshot_id = hs.id
+                    AND (rh.chain_id IS NULL OR rh.chain_id <> 1151111081)
+                ) as non_solana_rows,
+                error_message, created_at, finished_at
+         FROM ${table("holding_snapshots")} hs
          ORDER BY id DESC`,
       );
       return result.rows.map(mapSnapshot);
@@ -486,8 +501,21 @@ export function createPostgresStorage(): StorageAdapter {
     async getLatestSnapshot(): Promise<SnapshotRecord | null> {
       const result = await getPool().query(
         `SELECT id, status, zapper_key_label, total_entities, entities_completed, entities_failed,
-                total_rows, error_message, created_at, finished_at
-         FROM ${table("holding_snapshots")}
+                total_rows,
+                (
+                  SELECT COUNT(*)
+                  FROM ${table("raw_holdings")} rh
+                  WHERE rh.snapshot_id = hs.id
+                    AND rh.chain_id = 1151111081
+                ) as solana_rows,
+                (
+                  SELECT COUNT(*)
+                  FROM ${table("raw_holdings")} rh
+                  WHERE rh.snapshot_id = hs.id
+                    AND (rh.chain_id IS NULL OR rh.chain_id <> 1151111081)
+                ) as non_solana_rows,
+                error_message, created_at, finished_at
+         FROM ${table("holding_snapshots")} hs
          ORDER BY id DESC
          LIMIT 1`,
       );

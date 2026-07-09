@@ -502,7 +502,20 @@ function createSqliteStorage(cwd: string): StorageAdapter {
         .prepare(
           `SELECT id, status, zapper_key_label as zapperKeyLabel, total_entities as totalEntities,
                   entities_completed as entitiesCompleted, entities_failed as entitiesFailed,
-                  total_rows as totalRows, error_message as errorMessage,
+                  total_rows as totalRows,
+                  (
+                    SELECT COUNT(*)
+                    FROM raw_holdings rh
+                    WHERE rh.snapshot_id = holding_snapshots.id
+                      AND rh.chain_id = 1151111081
+                  ) as solanaRows,
+                  (
+                    SELECT COUNT(*)
+                    FROM raw_holdings rh
+                    WHERE rh.snapshot_id = holding_snapshots.id
+                      AND (rh.chain_id IS NULL OR rh.chain_id <> 1151111081)
+                  ) as nonSolanaRows,
+                  error_message as errorMessage,
                   created_at as createdAt, finished_at as finishedAt
            FROM holding_snapshots
            ORDER BY id DESC`,
@@ -516,7 +529,20 @@ function createSqliteStorage(cwd: string): StorageAdapter {
           .prepare(
             `SELECT id, status, zapper_key_label as zapperKeyLabel, total_entities as totalEntities,
                     entities_completed as entitiesCompleted, entities_failed as entitiesFailed,
-                    total_rows as totalRows, error_message as errorMessage,
+                    total_rows as totalRows,
+                    (
+                      SELECT COUNT(*)
+                      FROM raw_holdings rh
+                      WHERE rh.snapshot_id = holding_snapshots.id
+                        AND rh.chain_id = 1151111081
+                    ) as solanaRows,
+                    (
+                      SELECT COUNT(*)
+                      FROM raw_holdings rh
+                      WHERE rh.snapshot_id = holding_snapshots.id
+                        AND (rh.chain_id IS NULL OR rh.chain_id <> 1151111081)
+                    ) as nonSolanaRows,
+                    error_message as errorMessage,
                     created_at as createdAt, finished_at as finishedAt
              FROM holding_snapshots
              ORDER BY id DESC
