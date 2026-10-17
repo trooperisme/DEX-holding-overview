@@ -104,7 +104,9 @@ test("overview API applies favorite entity scoring", async () => {
     });
     await storage.close();
 
-    const { createApp } = await import("./app.js");
+    // Resolve the TypeScript source under ts-node and the compiled JavaScript
+    // under dist/ without relying on a source-side .js file being present.
+    const { createApp } = require(path.join(__dirname, "app")) as typeof import("./app");
     const server = await new Promise<http.Server>((resolve) => {
       const listening = createApp().listen(0, "127.0.0.1", () => resolve(listening));
     });
