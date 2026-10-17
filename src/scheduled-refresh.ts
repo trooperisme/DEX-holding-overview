@@ -1,11 +1,15 @@
 import dotenv from "dotenv";
 import { runDexRefresh } from "./dex-refresh";
+import {
+  evaluateRefreshQuality,
+  getRefreshQualityGateConfig,
+} from "./refresh-quality-gate";
 import { closePostgresPool } from "./storage-postgres";
 
 dotenv.config();
 
 /**
- * Entry point for a Railway Cron service.
+ * Entry point for a scheduled worker (for example GitHub Actions or Railway Cron).
  *
  * Railway starts this process on schedule and expects it to exit when the
  * refresh finishes. The web server remains a separate service/process.
@@ -28,8 +32,11 @@ export async function runScheduledRefresh(): Promise<void> {
       `failed=${result.entitiesFailed}, rows=${result.totalRows}.`,
   );
 
-  if (result.status === "failed") {
-    throw new Error("Scheduled refresh failed: all entity fetches failed");
+  const quality = evaluateRefreshQuality(result, getRefreshQualityGateConfig());
+  if (!quality.ok) {
+    throw new Error(
+      `Scheduled refresh quality gate failed: ${quality.failures.join("; ")}`,
+    );
   }
 }
 
