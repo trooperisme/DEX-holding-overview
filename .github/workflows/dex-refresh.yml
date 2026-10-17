@@ -18,7 +18,6 @@ jobs:
       DATABASE_SCHEMA: dex
       FIRECRAWL_API_KEY: ${{ secrets.FIRECRAWL_API_KEY }}
       CIELO_ENTITIES_CSV: data/raw/entity-cielo-portfolio-links.csv
-      NODE_ENV: production
 
     steps:
       - name: Check out repository
@@ -43,4 +42,6 @@ jobs:
         run: npm run build
 
       - name: Run scheduled refresh
+        env:
+          NODE_ENV: production
         run: npm run refresh:scheduled
