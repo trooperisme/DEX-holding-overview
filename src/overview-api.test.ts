@@ -104,7 +104,7 @@ test("overview API applies favorite entity scoring", async () => {
     });
     await storage.close();
 
-    const { createApp } = await import("./app");
+    const { createApp } = await import("./app.js");
     const server = await new Promise<http.Server>((resolve) => {
       const listening = createApp().listen(0, "127.0.0.1", () => resolve(listening));
     });
