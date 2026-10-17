@@ -1,5 +1,5 @@
 import { Pool, PoolClient } from "pg";
-import { withOpportunityScore } from "./scoring";
+import { ScoreContext, ScoreHistorySample, withOpportunityScore } from "./scoring";
 import {
   EntityFetchRunRecord,
   EntityRecord,
@@ -16,6 +16,12 @@ import { SnapshotTokenForEnrichment, SnapshotUpdate, StorageAdapter } from "./st
 import { normalizeTokenName } from "./token-name";
 
 let sharedPool: Pool | null = null;
+
+export async function closePostgresPool(): Promise<void> {
+  const pool = sharedPool;
+  sharedPool = null;
+  if (pool) await pool.end();
+}
 
 function getSchema(): string {
   const schema = process.env.DATABASE_SCHEMA?.trim() || "dex";
@@ -73,7 +79,7 @@ function mapSnapshot(row: any): SnapshotRecord {
   return {
     id: Number(row.id),
     status: row.status,
-    zapperKeyLabel: row.zapper_key_label,
+    providerLabel: row.zapper_key_label,
     totalEntities: Number(row.total_entities),
     entitiesCompleted: Number(row.entities_completed),
     entitiesFailed: Number(row.entities_failed),
@@ -84,6 +90,169 @@ function mapSnapshot(row: any): SnapshotRecord {
     createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : String(row.created_at),
     finishedAt: row.finished_at ? (row.finished_at instanceof Date ? row.finished_at.toISOString() : String(row.finished_at)) : null,
   };
+}
+
+function normalizeFavoriteEntityKeys(names: string[] = []): string[] {
+  return [...new Set(names.map((name) => String(name || "").trim().toLowerCase()).filter(Boolean))];
+}
+
+async function getEntityConvictionByToken(snapshotId: number, minBalanceUsd: number): Promise<Map<string, number>> {
+  const grouped = await getEntityConvictionByTokenForSnapshots([snapshotId], minBalanceUsd);
+  return grouped.get(snapshotId) || new Map();
+}
+
+async function getEntityConvictionByTokenForSnapshots(snapshotIds: number[], minBalanceUsd: number): Promise<Map<number, Map<string, number>>> {
+  if (!snapshotIds.length) return new Map();
+  const result = await getPool().query(
+    `WITH positions AS (
+       SELECT rh.snapshot_id, rh.token_key, lower(e.entity_name) as entity_key, MAX(rh.balance_usd) as balance_usd
+       FROM ${table("raw_holdings")} rh
+       INNER JOIN ${table("entities")} e ON e.id = rh.entity_id
+       LEFT JOIN ${table("token_blacklist")} bl
+         ON bl.token_key = rh.token_key AND bl.is_active = true
+       WHERE rh.snapshot_id = ANY($1::bigint[]) AND rh.balance_usd >= $2 AND bl.id IS NULL
+       GROUP BY rh.snapshot_id, rh.token_key, lower(e.entity_name)
+     ),
+     medians AS (
+       SELECT snapshot_id, entity_key, percentile_cont(0.5) WITHIN GROUP (ORDER BY balance_usd) as median_balance_usd
+       FROM positions
+       GROUP BY snapshot_id, entity_key
+     )
+     SELECT p.snapshot_id, p.token_key, AVG(
+       CASE
+         WHEN p.balance_usd / GREATEST(m.median_balance_usd, 1) < 0.5 THEN 0.75
+         WHEN p.balance_usd / GREATEST(m.median_balance_usd, 1) < 1 THEN 0.9
+         WHEN p.balance_usd / GREATEST(m.median_balance_usd, 1) < 2 THEN 1.1
+         WHEN p.balance_usd / GREATEST(m.median_balance_usd, 1) < 4 THEN 1.35
+         ELSE 1.6
+       END
+     ) as entity_conviction
+     FROM positions p
+     INNER JOIN medians m ON m.snapshot_id = p.snapshot_id AND m.entity_key = p.entity_key
+     GROUP BY p.snapshot_id, p.token_key`,
+    [snapshotIds, minBalanceUsd],
+  );
+  const output = new Map<number, Map<string, number>>();
+  for (const row of result.rows) {
+    const byToken = output.get(Number(row.snapshot_id)) || new Map<string, number>();
+    byToken.set(row.token_key, Number(row.entity_conviction || 1));
+    output.set(Number(row.snapshot_id), byToken);
+  }
+  return output;
+}
+
+async function getEntityConvictionForTokenAtSnapshots(
+  snapshotIds: number[],
+  tokenKey: string,
+  minBalanceUsd: number,
+): Promise<Map<number, number>> {
+  if (!snapshotIds.length) return new Map();
+  const result = await getPool().query(
+    `WITH target_entities AS (
+       SELECT rh.snapshot_id, lower(e.entity_name) as entity_key
+       FROM ${table("raw_holdings")} rh
+       INNER JOIN ${table("entities")} e ON e.id = rh.entity_id
+       LEFT JOIN ${table("token_blacklist")} bl
+         ON bl.token_key = rh.token_key AND bl.is_active = true
+       WHERE rh.snapshot_id = ANY($1::bigint[])
+         AND rh.token_key = $2
+         AND rh.balance_usd >= $3
+         AND bl.id IS NULL
+       GROUP BY rh.snapshot_id, lower(e.entity_name)
+     ),
+     positions AS (
+       SELECT rh.snapshot_id, rh.token_key, lower(e.entity_name) as entity_key,
+              MAX(rh.balance_usd) as balance_usd
+       FROM ${table("raw_holdings")} rh
+       INNER JOIN ${table("entities")} e ON e.id = rh.entity_id
+       INNER JOIN target_entities te
+         ON te.snapshot_id = rh.snapshot_id AND te.entity_key = lower(e.entity_name)
+       LEFT JOIN ${table("token_blacklist")} bl
+         ON bl.token_key = rh.token_key AND bl.is_active = true
+       WHERE rh.snapshot_id = ANY($1::bigint[])
+         AND rh.balance_usd >= $3
+         AND bl.id IS NULL
+       GROUP BY rh.snapshot_id, rh.token_key, lower(e.entity_name)
+     ),
+     medians AS (
+       SELECT snapshot_id, entity_key,
+              percentile_cont(0.5) WITHIN GROUP (ORDER BY balance_usd) as median_balance_usd
+       FROM positions
+       GROUP BY snapshot_id, entity_key
+     )
+     SELECT p.snapshot_id, AVG(
+       CASE
+         WHEN p.balance_usd / GREATEST(m.median_balance_usd, 1) < 0.5 THEN 0.75
+         WHEN p.balance_usd / GREATEST(m.median_balance_usd, 1) < 1 THEN 0.9
+         WHEN p.balance_usd / GREATEST(m.median_balance_usd, 1) < 2 THEN 1.1
+         WHEN p.balance_usd / GREATEST(m.median_balance_usd, 1) < 4 THEN 1.35
+         ELSE 1.6
+       END
+     ) as entity_conviction
+     FROM positions p
+     INNER JOIN medians m ON m.snapshot_id = p.snapshot_id AND m.entity_key = p.entity_key
+     WHERE p.token_key = $2
+     GROUP BY p.snapshot_id, p.token_key`,
+    [snapshotIds, tokenKey, minBalanceUsd],
+  );
+  return new Map(result.rows.map((row) => [Number(row.snapshot_id), Number(row.entity_conviction || 1)]));
+}
+
+async function getPreviousScoreSamples(
+  snapshotId: number,
+  minBalanceUsd: number,
+  favoriteEntityKeys: string[],
+): Promise<Map<string, ScoreHistorySample[]>> {
+  const snapshots = await getPool().query(
+    `SELECT id, COALESCE(finished_at, created_at) as at
+     FROM ${table("holding_snapshots")}
+     WHERE id < $1 AND status = 'success'
+     ORDER BY COALESCE(finished_at, created_at) DESC, id DESC
+     LIMIT 2`,
+    [snapshotId],
+  );
+  if (!snapshots.rows.length) return new Map();
+  const ids = snapshots.rows.map((row) => Number(row.id));
+  const result = await getPool().query(
+    `WITH canonical AS (
+       SELECT rh.snapshot_id, rh.token_key, lower(e.entity_name) as entity_key,
+              MAX(rh.balance_usd) as balance_usd,
+              MAX(NULLIF(regexp_replace(trim(rh.balance), '([^0-9eE+.-]).*$', ''), '')::numeric) as token_amount
+       FROM ${table("raw_holdings")} rh
+       INNER JOIN ${table("entities")} e ON e.id = rh.entity_id
+       LEFT JOIN ${table("token_blacklist")} bl
+         ON bl.token_key = rh.token_key AND bl.is_active = true
+       WHERE rh.snapshot_id = ANY($1::bigint[]) AND rh.balance_usd >= $2 AND bl.id IS NULL
+       GROUP BY rh.snapshot_id, rh.token_key, lower(e.entity_name)
+     )
+     SELECT snapshot_id, token_key,
+            ROUND(SUM(balance_usd)::numeric, 2) as holdings_usd,
+            SUM(token_amount) as token_amount,
+            COUNT(*) as smw_in,
+            COUNT(*) FILTER (WHERE entity_key = ANY($3::text[])) as favorite_entity_count,
+            ROUND(COALESCE(SUM(balance_usd) FILTER (WHERE entity_key = ANY($3::text[])), 0)::numeric, 2) as favorite_holdings_usd
+     FROM canonical
+     GROUP BY snapshot_id, token_key`,
+    [ids, minBalanceUsd, favoriteEntityKeys],
+  );
+  const snapshotById = new Map(snapshots.rows.map((row) => [Number(row.id), String(row.at)]));
+  const grouped = new Map<string, ScoreHistorySample[]>();
+  for (const row of result.rows) {
+    const at = snapshotById.get(Number(row.snapshot_id));
+    if (!at) continue;
+    const list = grouped.get(row.token_key) || [];
+    list.push({
+      tokenAmount: Number(row.token_amount || 0),
+      holdingsUsd: Number(row.holdings_usd || 0),
+      smwIn: Number(row.smw_in || 0),
+      favoriteEntityCount: Number(row.favorite_entity_count || 0),
+      favoriteHoldingsUsd: Number(row.favorite_holdings_usd || 0),
+      at,
+    });
+    grouped.set(row.token_key, list);
+  }
+  for (const list of grouped.values()) list.sort((left, right) => Date.parse(right.at) - Date.parse(left.at));
+  return grouped;
 }
 
 function normalizeRawHoldingTokenName(row: RawHoldingRecord): string {
@@ -100,7 +269,7 @@ function mapEntity(row: any): EntityRecord {
   return {
     id: Number(row.id),
     entityName: row.entity_name,
-    fullZapperLink: row.full_zapper_link,
+    sourceUrl: row.full_zapper_link,
     resolvedLabel: row.resolved_label,
     linkType: row.link_type,
     createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : String(row.created_at),
@@ -117,16 +286,17 @@ function mapOverview(row: any): TokenOverviewRow {
     chainId: numberOrNull(row.chain_id),
     tokenAddress: row.token_address,
     holdingsUsd: Number(row.holdings_usd || 0),
+    tokenAmount: Number(row.token_amount || 0),
     smwIn: Number(row.smw_in || 0),
+    favoriteEntityCount: Number(row.favorite_entity_count || 0),
+    favoriteHoldingsUsd: Number(row.favorite_holdings_usd || 0),
+    favoriteEntityNames: Array.isArray(row.favorite_entity_names) ? row.favorite_entity_names.filter(Boolean) : [],
     marketCap: numberOrNull(row.market_cap),
     tokenAgeHours: numberOrNull(row.token_age_hours),
-    moniScore: numberOrNull(row.moni_score),
-    moniLevel: numberOrNull(row.moni_level),
-    moniLevelName: row.moni_level_name,
-    moniMomentumScorePct: numberOrNull(row.moni_momentum_score_pct),
-    moniMomentumRank: numberOrNull(row.moni_momentum_rank),
     volume24h: numberOrNull(row.volume_24h),
     txns24h: numberOrNull(row.txns_24h),
+    liquidityUsd: numberOrNull(row.liquidity_usd),
+    entityConviction: Number(row.entity_conviction || 1),
   });
 }
 
@@ -150,7 +320,7 @@ export function createPostgresStorage(): StorageAdapter {
                updated_at DESC,
                id DESC
              LIMIT 1`,
-            [entity.entityName, entity.fullZapperLink],
+            [entity.entityName, entity.sourceUrl],
           );
           const result = existing.rows[0]
             ? await client.query<{ id: string }>(
@@ -164,7 +334,7 @@ export function createPostgresStorage(): StorageAdapter {
                  RETURNING id`,
                 [
                   entity.entityName,
-                  entity.fullZapperLink,
+                  entity.sourceUrl,
                   entity.resolvedLabel,
                   entity.linkType,
                   now,
@@ -181,7 +351,7 @@ export function createPostgresStorage(): StorageAdapter {
                    link_type = EXCLUDED.link_type,
                    updated_at = EXCLUDED.updated_at
                  RETURNING id`,
-                [entity.entityName, entity.fullZapperLink, entity.resolvedLabel, entity.linkType, now],
+                [entity.entityName, entity.sourceUrl, entity.resolvedLabel, entity.linkType, now],
               );
           const entityId = Number(result.rows[0].id);
           const duplicateResult = await client.query<{ id: string }>(
@@ -254,12 +424,44 @@ export function createPostgresStorage(): StorageAdapter {
       }));
     },
 
-    async createSnapshot(totalEntities: number, zapperKeyLabel: string | null): Promise<number> {
+    async getEntitiesByLinks(sourceUrls: string[]): Promise<Array<EntityRecord & { wallets: EntityWalletRecord[] }>> {
+      if (!sourceUrls.length) return [];
+      const entitiesResult = await getPool().query(
+        `SELECT id, entity_name, full_zapper_link, resolved_label, link_type, created_at, updated_at
+         FROM ${table("entities")} WHERE full_zapper_link = ANY($1::text[]) ORDER BY id ASC`,
+        [sourceUrls],
+      );
+      const entities = entitiesResult.rows.map(mapEntity);
+      if (!entities.length) return [];
+      const walletResult = await getPool().query(
+        `SELECT entity_id, wallet_address, wallet_index
+         FROM ${table("entity_wallets")}
+         WHERE entity_id = ANY($1::bigint[])
+         ORDER BY entity_id ASC, wallet_index ASC`,
+        [entities.map((entity) => entity.id)],
+      );
+      const walletsByEntity = new Map<number, EntityWalletRecord[]>();
+      for (const row of walletResult.rows) {
+        const entityId = Number(row.entity_id);
+        if (!walletsByEntity.has(entityId)) walletsByEntity.set(entityId, []);
+        walletsByEntity.get(entityId)!.push({
+          entityId,
+          walletAddress: row.wallet_address,
+          walletIndex: Number(row.wallet_index),
+        });
+      }
+      return entities.map((entity) => ({
+        ...entity,
+        wallets: walletsByEntity.get(entity.id) || [],
+      }));
+    },
+
+    async createSnapshot(totalEntities: number, providerLabel: string | null): Promise<number> {
       const result = await getPool().query<{ id: string }>(
         `INSERT INTO ${table("holding_snapshots")} (status, zapper_key_label, total_entities, created_at)
          VALUES ($1, $2, $3, $4)
          RETURNING id`,
-        ["running", zapperKeyLabel, totalEntities, new Date().toISOString()],
+        ["running", providerLabel, totalEntities, new Date().toISOString()],
       );
       return Number(result.rows[0].id);
     },
@@ -352,11 +554,6 @@ export function createPostgresStorage(): StorageAdapter {
           "volume_24h",
           "txns_24h",
           "token_age_hours",
-          "moni_score",
-          "moni_level",
-          "moni_level_name",
-          "moni_momentum_score_pct",
-          "moni_momentum_rank",
           "fetched_at",
         ];
         const batchSize = 400;
@@ -383,11 +580,6 @@ export function createPostgresStorage(): StorageAdapter {
               row.volume24h,
               row.txns24h,
               row.tokenAgeHours,
-              row.moniScore,
-              row.moniLevel,
-              row.moniLevelName,
-              row.moniMomentumScorePct,
-              row.moniMomentumRank,
               row.fetchedAt,
             ];
             values.push(...rowValues);
@@ -407,7 +599,7 @@ export function createPostgresStorage(): StorageAdapter {
     async updateSnapshotTokenMarketData(snapshotId, tokenKey, marketData): Promise<void> {
       await getPool().query(
         `UPDATE ${table("raw_holdings")}
-         SET market_cap = $3,
+         SET market_cap = COALESCE($3, market_cap),
              liquidity_usd = $4,
              volume_24h = $5,
              txns_24h = $6,
@@ -423,56 +615,6 @@ export function createPostgresStorage(): StorageAdapter {
           marketData.tokenAgeHours,
         ],
       );
-    },
-
-    async updateSnapshotTokenMoniData(snapshotId, tokenKey, moniData): Promise<void> {
-      await getPool().query(
-        `UPDATE ${table("raw_holdings")}
-         SET moni_score = $3,
-             moni_level = $4,
-             moni_level_name = $5,
-             moni_momentum_score_pct = $6,
-             moni_momentum_rank = $7
-         WHERE snapshot_id = $1 AND token_key = $2`,
-        [
-          snapshotId,
-          tokenKey,
-          moniData.moniScore,
-          moniData.moniLevel,
-          moniData.moniLevelName,
-          moniData.moniMomentumScorePct,
-          moniData.moniMomentumRank,
-        ],
-      );
-    },
-
-    async getLatestTokenMoniDataBeforeSnapshot(snapshotId, tokenKey) {
-      const result = await getPool().query(
-        `SELECT
-            MAX(rh.moni_score) as moni_score,
-            MAX(rh.moni_level) as moni_level,
-            MAX(rh.moni_level_name) as moni_level_name,
-            MAX(rh.moni_momentum_score_pct) as moni_momentum_score_pct,
-            MAX(rh.moni_momentum_rank) as moni_momentum_rank
-         FROM ${table("raw_holdings")} rh
-         WHERE rh.token_key = $1
-           AND rh.snapshot_id < $2
-           AND rh.moni_score IS NOT NULL
-         GROUP BY rh.snapshot_id
-         ORDER BY rh.snapshot_id DESC
-         LIMIT 1`,
-        [tokenKey, snapshotId],
-      );
-
-      const row = result.rows[0];
-      if (!row) return null;
-      return {
-        moniScore: Number(row.moni_score),
-        moniLevel: Number(row.moni_level),
-        moniLevelName: row.moni_level_name,
-        moniMomentumScorePct: numberOrNull(row.moni_momentum_score_pct),
-        moniMomentumRank: numberOrNull(row.moni_momentum_rank),
-      };
     },
 
     async getSnapshotSummaries(): Promise<SnapshotRecord[]> {
@@ -574,25 +716,25 @@ export function createPostgresStorage(): StorageAdapter {
       minSmwIn = 1,
       minLiquidityUsd = 11111,
       maxMarketCapUsd: number | null = null,
+      favoriteEntityNames: string[] = [],
     ): Promise<TokenOverviewRow[]> {
+      const favoriteEntityKeys = normalizeFavoriteEntityKeys(favoriteEntityNames);
       const result = await getPool().query(
         `WITH canonical_holdings AS (
            SELECT
              rh.token_key,
              lower(e.entity_name) as entity_key,
+             MAX(e.entity_name) as entity_name,
+             BOOL_OR(lower(e.entity_name) = ANY($6::text[])) as is_favorite_entity,
              MAX(rh.token_symbol) as token_symbol,
              MAX(rh.token_name) as token_name,
              MAX(rh.network_name) as network_name,
              MAX(rh.chain_id) as chain_id,
              MAX(rh.token_address) as token_address,
              MAX(rh.balance_usd) as balance_usd,
+             MAX(NULLIF(regexp_replace(trim(rh.balance), '([^0-9eE+.-]).*$', ''), '')::numeric) as token_amount,
              MAX(rh.market_cap) as market_cap,
              MAX(rh.token_age_hours) as token_age_hours,
-             MAX(rh.moni_score) as moni_score,
-             MAX(rh.moni_level) as moni_level,
-             MAX(rh.moni_level_name) as moni_level_name,
-             MAX(rh.moni_momentum_score_pct) as moni_momentum_score_pct,
-             MAX(rh.moni_momentum_rank) as moni_momentum_rank,
              MAX(rh.volume_24h) as volume_24h,
              MAX(rh.txns_24h) as txns_24h,
              MAX(rh.liquidity_usd) as liquidity_usd
@@ -614,14 +756,13 @@ export function createPostgresStorage(): StorageAdapter {
               MAX(chain_id) as chain_id,
               MAX(token_address) as token_address,
               ROUND(SUM(balance_usd)::numeric, 2) as holdings_usd,
+              SUM(token_amount) as token_amount,
               COUNT(*) as smw_in,
+              COUNT(*) FILTER (WHERE is_favorite_entity) as favorite_entity_count,
+              ROUND(COALESCE(SUM(balance_usd) FILTER (WHERE is_favorite_entity), 0)::numeric, 2) as favorite_holdings_usd,
+              COALESCE(ARRAY_AGG(entity_name ORDER BY entity_name) FILTER (WHERE is_favorite_entity), ARRAY[]::text[]) as favorite_entity_names,
               MAX(market_cap) as market_cap,
               MAX(token_age_hours) as token_age_hours,
-              MAX(moni_score) as moni_score,
-              MAX(moni_level) as moni_level,
-              MAX(moni_level_name) as moni_level_name,
-              MAX(moni_momentum_score_pct) as moni_momentum_score_pct,
-              MAX(moni_momentum_rank) as moni_momentum_rank,
               MAX(volume_24h) as volume_24h,
               MAX(txns_24h) as txns_24h,
               MAX(liquidity_usd) as liquidity_usd
@@ -647,83 +788,50 @@ export function createPostgresStorage(): StorageAdapter {
              )
          )
          SELECT
-            token_key,
-            token_symbol,
-            token_name,
-            network_name,
-            chain_id,
-            token_address,
-            holdings_usd,
-            smw_in,
-            market_cap,
-            token_age_hours,
-            COALESCE(
-              moni_score,
-              (
-                SELECT prev.moni_score
-                FROM ${table("raw_holdings")} prev
-                WHERE prev.token_key = token_rollup.token_key
-                  AND prev.snapshot_id < $1
-                  AND prev.moni_score IS NOT NULL
-                ORDER BY prev.snapshot_id DESC
-                LIMIT 1
-              )
-            ) as moni_score,
-            COALESCE(
-              moni_level,
-              (
-                SELECT prev.moni_level
-                FROM ${table("raw_holdings")} prev
-                WHERE prev.token_key = token_rollup.token_key
-                  AND prev.snapshot_id < $1
-                  AND prev.moni_score IS NOT NULL
-                ORDER BY prev.snapshot_id DESC
-                LIMIT 1
-              )
-            ) as moni_level,
-            COALESCE(
-              moni_level_name,
-              (
-                SELECT prev.moni_level_name
-                FROM ${table("raw_holdings")} prev
-                WHERE prev.token_key = token_rollup.token_key
-                  AND prev.snapshot_id < $1
-                  AND prev.moni_score IS NOT NULL
-                ORDER BY prev.snapshot_id DESC
-                LIMIT 1
-              )
-            ) as moni_level_name,
-            COALESCE(
-              moni_momentum_score_pct,
-              (
-                SELECT prev.moni_momentum_score_pct
-                FROM ${table("raw_holdings")} prev
-                WHERE prev.token_key = token_rollup.token_key
-                  AND prev.snapshot_id < $1
-                  AND prev.moni_score IS NOT NULL
-                ORDER BY prev.snapshot_id DESC
-                LIMIT 1
-              )
-            ) as moni_momentum_score_pct,
-            COALESCE(
-              moni_momentum_rank,
-              (
-                SELECT prev.moni_momentum_rank
-                FROM ${table("raw_holdings")} prev
-                WHERE prev.token_key = token_rollup.token_key
-                  AND prev.snapshot_id < $1
-                  AND prev.moni_score IS NOT NULL
-                ORDER BY prev.snapshot_id DESC
-                LIMIT 1
-              )
-            ) as moni_momentum_rank,
-            volume_24h,
-            txns_24h
-         FROM token_rollup
-         ORDER BY smw_in DESC, holdings_usd DESC, token_symbol ASC`,
-        [snapshotId, minBalanceUsd, minSmwIn, minLiquidityUsd, maxMarketCapUsd],
+            tr.token_key,
+            tr.token_symbol,
+            tr.token_name,
+            tr.network_name,
+            tr.chain_id,
+            tr.token_address,
+            tr.holdings_usd,
+            tr.token_amount,
+            tr.smw_in,
+            tr.favorite_entity_count,
+            tr.favorite_holdings_usd,
+            tr.favorite_entity_names,
+            tr.market_cap,
+            tr.token_age_hours,
+            tr.volume_24h,
+            tr.txns_24h,
+            tr.liquidity_usd
+         FROM token_rollup tr
+         ORDER BY tr.smw_in DESC, tr.holdings_usd DESC, tr.token_symbol ASC`,
+        [snapshotId, minBalanceUsd, minSmwIn, minLiquidityUsd, maxMarketCapUsd, favoriteEntityKeys],
       );
-      return result.rows.map(mapOverview);
+      const convictionByToken = await getEntityConvictionByToken(snapshotId, minBalanceUsd);
+      const mappedRows = result.rows.map((row) => ({
+        ...mapOverview(row),
+        entityConviction: convictionByToken.get(row.token_key) || 1,
+      }));
+      const snapshotResult = await getPool().query(
+        `SELECT COALESCE(finished_at, created_at) as at FROM ${table("holding_snapshots")} WHERE id = $1`,
+        [snapshotId],
+      );
+      const currentAt = snapshotResult.rows[0]?.at instanceof Date
+        ? snapshotResult.rows[0].at.toISOString()
+        : String(snapshotResult.rows[0]?.at || new Date().toISOString());
+      const previousByToken = await getPreviousScoreSamples(snapshotId, minBalanceUsd, favoriteEntityKeys);
+      return mappedRows.map((row) => {
+        const previous = previousByToken.get(row.tokenKey) || [];
+        const context: ScoreContext = {
+          currentAt,
+          previous: previous[0],
+          previousPrevious: previous[1],
+          entityConviction: row.entityConviction,
+        };
+        return withOpportunityScore(row, context);
+      });
     },
 
     async getTokenHolders(snapshotId: number, tokenKey: string, minBalanceUsd = 111): Promise<TokenHolderRow[]> {
@@ -757,28 +865,31 @@ export function createPostgresStorage(): StorageAdapter {
       }));
     },
 
-    async getTokenScoreHistory(tokenKey: string, minBalanceUsd = 111): Promise<TokenScorePoint[]> {
+    async getTokenScoreHistory(tokenKey: string, minBalanceUsd = 111, favoriteEntityNames: string[] = [], limit: number | null = null): Promise<TokenScorePoint[]> {
+      const favoriteEntityKeys = normalizeFavoriteEntityKeys(favoriteEntityNames);
+      const historyLimit = Number.isFinite(Number(limit)) && Number(limit) > 0 ? Math.min(100, Math.trunc(Number(limit))) : null;
+      const queryLimit = historyLimit == null ? null : historyLimit + 2;
+      const historyOrder = queryLimit == null ? "ASC" : "DESC";
+      const historyLimitClause = queryLimit == null ? "" : "LIMIT $4";
       const result = await getPool().query(
         `WITH canonical_holdings AS (
            SELECT
              rh.snapshot_id,
              rh.token_key,
              lower(e.entity_name) as entity_key,
+             BOOL_OR(lower(e.entity_name) = ANY($3::text[])) as is_favorite,
              MAX(rh.token_symbol) as token_symbol,
              MAX(rh.token_name) as token_name,
              MAX(rh.network_name) as network_name,
              MAX(rh.chain_id) as chain_id,
              MAX(rh.token_address) as token_address,
              MAX(rh.balance_usd) as balance_usd,
+             MAX(NULLIF(regexp_replace(trim(rh.balance), '([^0-9eE+.-]).*$', ''), '')::numeric) as token_amount,
              MAX(rh.market_cap) as market_cap,
              MAX(rh.token_age_hours) as token_age_hours,
-             MAX(rh.moni_score) as moni_score,
-             MAX(rh.moni_level) as moni_level,
-             MAX(rh.moni_level_name) as moni_level_name,
-             MAX(rh.moni_momentum_score_pct) as moni_momentum_score_pct,
-             MAX(rh.moni_momentum_rank) as moni_momentum_rank,
              MAX(rh.volume_24h) as volume_24h,
-             MAX(rh.txns_24h) as txns_24h
+             MAX(rh.txns_24h) as txns_24h,
+             MAX(rh.liquidity_usd) as liquidity_usd
            FROM ${table("raw_holdings")} rh
            INNER JOIN ${table("entities")} e ON e.id = rh.entity_id
            WHERE rh.token_key = $1
@@ -797,23 +908,23 @@ export function createPostgresStorage(): StorageAdapter {
             MAX(ch.chain_id) as "chainId",
             MAX(ch.token_address) as "tokenAddress",
             ROUND(SUM(ch.balance_usd)::numeric, 2) as "holdingsUsd",
+            SUM(ch.token_amount) as "tokenAmount",
             COUNT(*) as "smwIn",
+            COUNT(*) FILTER (WHERE ch.is_favorite) as "favoriteEntityCount",
+            ROUND(COALESCE(SUM(ch.balance_usd) FILTER (WHERE ch.is_favorite), 0)::numeric, 2) as "favoriteHoldingsUsd",
             MAX(ch.market_cap) as "marketCap",
             MAX(ch.token_age_hours) as "tokenAgeHours",
-            MAX(ch.moni_score) as "moniScore",
-            MAX(ch.moni_level) as "moniLevel",
-            MAX(ch.moni_level_name) as "moniLevelName",
-            MAX(ch.moni_momentum_score_pct) as "moniMomentumScorePct",
-            MAX(ch.moni_momentum_rank) as "moniMomentumRank",
             MAX(ch.volume_24h) as "volume24h",
-            MAX(ch.txns_24h) as "txns24h"
+            MAX(ch.txns_24h) as "txns24h",
+            MAX(ch.liquidity_usd) as "liquidityUsd"
          FROM canonical_holdings ch
          INNER JOIN ${table("holding_snapshots")} hs ON hs.id = ch.snapshot_id
          WHERE ch.token_key = $1
            AND hs.status IN ('success', 'partial')
          GROUP BY hs.id, ch.token_key
-         ORDER BY COALESCE(hs.finished_at, hs.created_at) ASC, hs.id ASC`,
-        [tokenKey, minBalanceUsd],
+         ORDER BY COALESCE(hs.finished_at, hs.created_at) ${historyOrder}, hs.id ${historyOrder}
+         ${historyLimitClause}`,
+        queryLimit == null ? [tokenKey, minBalanceUsd, favoriteEntityKeys] : [tokenKey, minBalanceUsd, favoriteEntityKeys, queryLimit],
       );
 
       const rows = result.rows.map((row) => ({
@@ -823,18 +934,50 @@ export function createPostgresStorage(): StorageAdapter {
         snapshotFinishedAt: row.snapshotFinishedAt instanceof Date ? row.snapshotFinishedAt.toISOString() : row.snapshotFinishedAt ? String(row.snapshotFinishedAt) : null,
         chainId: numberOrNull(row.chainId),
         holdingsUsd: Number(row.holdingsUsd || 0),
+        tokenAmount: Number(row.tokenAmount || 0),
         smwIn: Number(row.smwIn || 0),
+        favoriteEntityCount: Number(row.favoriteEntityCount || 0),
+        favoriteHoldingsUsd: Number(row.favoriteHoldingsUsd || 0),
         marketCap: numberOrNull(row.marketCap),
         tokenAgeHours: numberOrNull(row.tokenAgeHours),
-        moniScore: numberOrNull(row.moniScore),
-        moniLevel: numberOrNull(row.moniLevel),
-        moniMomentumScorePct: numberOrNull(row.moniMomentumScorePct),
-        moniMomentumRank: numberOrNull(row.moniMomentumRank),
         volume24h: numberOrNull(row.volume24h),
         txns24h: numberOrNull(row.txns24h),
+        liquidityUsd: numberOrNull(row.liquidityUsd),
       })) as Array<Omit<TokenScorePoint, "score">>;
-
-      return rows.map(withOpportunityScore);
+      if (queryLimit != null) rows.reverse();
+      const convictionBySnapshot = await getEntityConvictionForTokenAtSnapshots(
+        [...new Set(rows.map((row) => row.snapshotId))],
+        tokenKey,
+        minBalanceUsd,
+      );
+      let previous: ScoreHistorySample | undefined;
+      let previousPrevious: ScoreHistorySample | undefined;
+      const scoredRows: TokenScorePoint[] = [];
+      for (const row of rows) {
+        const normalized = {
+          ...row,
+          entityConviction: convictionBySnapshot.get(row.snapshotId) || 1,
+          favoriteEntityNames: [],
+        };
+        scoredRows.push(withOpportunityScore(normalized, {
+          currentAt: row.snapshotFinishedAt || row.snapshotCreatedAt,
+          previous,
+          previousPrevious,
+          entityConviction: normalized.entityConviction,
+        }) as TokenScorePoint);
+        if (row.snapshotStatus === "success") {
+          previousPrevious = previous;
+          previous = {
+            tokenAmount: row.tokenAmount,
+            holdingsUsd: row.holdingsUsd,
+            smwIn: row.smwIn,
+            favoriteEntityCount: Number(row.favoriteEntityCount || 0),
+            favoriteHoldingsUsd: Number(row.favoriteHoldingsUsd || 0),
+            at: row.snapshotFinishedAt || row.snapshotCreatedAt,
+          };
+        }
+      }
+      return historyLimit == null ? scoredRows : scoredRows.slice(-historyLimit);
     },
 
     async upsertBlacklist(input): Promise<void> {

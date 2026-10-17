@@ -2,7 +2,7 @@ export type EntityLinkType = "bundle" | "account";
 
 export type ImportedEntity = {
   entityName: string;
-  fullZapperLink: string;
+  sourceUrl: string;
   resolvedLabel: string | null;
   linkType: EntityLinkType;
   walletAddresses: string[];
@@ -11,7 +11,7 @@ export type ImportedEntity = {
 export type EntityRecord = {
   id: number;
   entityName: string;
-  fullZapperLink: string;
+  sourceUrl: string;
   resolvedLabel: string | null;
   linkType: EntityLinkType;
   createdAt: string;
@@ -29,7 +29,7 @@ export type SnapshotStatus = "running" | "success" | "partial" | "failed" | "can
 export type SnapshotRecord = {
   id: number;
   status: SnapshotStatus;
-  zapperKeyLabel: string | null;
+  providerLabel: string | null;
   totalEntities: number;
   entitiesCompleted: number;
   entitiesFailed: number;
@@ -55,7 +55,7 @@ export type EntityFetchRunRecord = {
   finishedAt: string | null;
 };
 
-export type ZapperTokenBalance = {
+export type TokenBalance = {
   tokenSymbol: string;
   tokenName: string;
   tokenAddress: string | null;
@@ -66,23 +66,10 @@ export type ZapperTokenBalance = {
   balanceUsd: number;
   price: number | null;
   marketCap: number | null;
-  liquidityUsd: number | null;
+  liquidityUsd?: number | null;
   volume24h: number | null;
   txns24h: number | null;
   tokenAgeHours: number | null;
-  moniScore: number | null;
-  moniLevel: number | null;
-  moniLevelName: string | null;
-  moniMomentumScorePct: number | null;
-  moniMomentumRank: number | null;
-};
-
-export type MoniScoreData = {
-  moniScore: number;
-  moniLevel: number;
-  moniLevelName: string;
-  moniMomentumScorePct: number | null;
-  moniMomentumRank: number | null;
 };
 
 export type RawHoldingRecord = {
@@ -99,15 +86,10 @@ export type RawHoldingRecord = {
   balanceUsd: number;
   price: number | null;
   marketCap: number | null;
-  liquidityUsd: number | null;
+  liquidityUsd?: number | null;
   volume24h: number | null;
   txns24h: number | null;
   tokenAgeHours: number | null;
-  moniScore: number | null;
-  moniLevel: number | null;
-  moniLevelName: string | null;
-  moniMomentumScorePct: number | null;
-  moniMomentumRank: number | null;
   fetchedAt: string;
 };
 
@@ -135,18 +117,26 @@ export type TokenOverviewRow = {
   holdingsUsd: number;
   smwIn: number;
   score: number;
+  baseScore?: number;
+  favoriteEntityCount?: number;
+  favoriteHoldingsUsd?: number;
+  favoriteEntityNames?: string[];
+  favoriteScoreMultiplier?: number;
+  structuralScore?: number;
+  momentumBoost?: number;
+  momentumPct?: number;
+  scoreVersion?: string;
+  tokenAmount?: number;
+  liquidityUsd?: number | null;
+  entityConviction?: number;
   marketCap: number | null;
   tokenAgeHours: number | null;
-  moniScore: number | null;
-  moniLevel: number | null;
-  moniLevelName: string | null;
-  moniMomentumScorePct: number | null;
-  moniMomentumRank: number | null;
   volume24h: number | null;
   txns24h: number | null;
 };
 
 export type TokenScorePoint = TokenOverviewRow & {
+  tokenAmount: number;
   snapshotId: number;
   snapshotStatus: SnapshotStatus;
   snapshotCreatedAt: string;
@@ -207,7 +197,7 @@ export type RefreshJobState = {
   running: boolean;
   startedAt: string;
   finishedAt: string | null;
-  apiKeyLabel: string | null;
+  providerLabel: string | null;
   progress: RefreshProgressState;
   logs: RefreshLogEntry[];
 };

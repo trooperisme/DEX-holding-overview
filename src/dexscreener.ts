@@ -20,12 +20,6 @@ type DexScreenerPair = {
   marketCap?: number | null;
   fdv?: number | null;
   pairCreatedAt?: number | null;
-  info?: {
-    socials?: Array<{
-      url?: string | null;
-      type?: string | null;
-    }> | null;
-  } | null;
 };
 
 export type DexScreenerMarketData = {
@@ -34,21 +28,13 @@ export type DexScreenerMarketData = {
   volume24h: number | null;
   txns24h: number | null;
   tokenAgeHours: number | null;
-  twitterHandle: string | null;
 };
 
 const DEXSCREENER_BATCH_LIMIT = 30;
-const X_RESERVED_PATHS = new Set([
-  "explore",
-  "home",
-  "i",
-  "intent",
-  "messages",
-  "notifications",
-  "search",
-  "settings",
-  "share",
-]);
+const DEXSCREENER_MAX_ATTEMPTS = 3;
+const TOKEN_PAIR_FALLBACK_INTERVAL_MS = 300;
+const TOKEN_PAIR_FALLBACK_CONCURRENCY = 4;
+let nextTokenPairFallbackAt = 0;
 
 function chunk<T>(items: T[], size: number): T[][]
 {
@@ -85,6 +71,10 @@ function getPairVolume24h(pair: DexScreenerPair): number {
   return Number(pair.volume?.h24 || 0);
 }
 
+function hasPositiveValue(value: number | null | undefined): boolean {
+  return Number.isFinite(Number(value)) && Number(value) > 0;
+}
+
 export function pickBestPair(pairs: DexScreenerPair[]): DexScreenerPair | null {
   if (!pairs.length) return null;
   return [...pairs].sort((left, right) => {
@@ -101,78 +91,120 @@ export function pickBestPair(pairs: DexScreenerPair[]): DexScreenerPair | null {
   })[0];
 }
 
-export function extractDirectTwitterHandle(url: string | null | undefined): string | null {
-  if (!url) return null;
-  let parsed: URL;
-  try {
-    parsed = new URL(url);
-  } catch (_error) {
-    return null;
-  }
-
-  const hostname = parsed.hostname.toLowerCase().replace(/^www\./, "");
-  if (hostname !== "x.com" && hostname !== "twitter.com") return null;
-
-  const segments = parsed.pathname.split("/").filter(Boolean);
-  if (segments.length !== 1) return null;
-
-  const handle = segments[0].replace(/^@/, "");
-  if (X_RESERVED_PATHS.has(handle.toLowerCase())) return null;
-  if (!/^[A-Za-z0-9_]{1,15}$/.test(handle)) return null;
-
-  return handle;
-}
-
-function getPairTwitterHandle(pair: DexScreenerPair): string | null {
-  const socials = pair.info?.socials || [];
-  for (const social of socials) {
-    if (String(social.type || "").toLowerCase() !== "twitter") continue;
-    const handle = extractDirectTwitterHandle(social.url);
-    if (handle) return handle;
-  }
-  return null;
-}
-
-function toMarketData(pair: DexScreenerPair | null): DexScreenerMarketData {
-  if (!pair) {
+function toMarketData(pairs: DexScreenerPair[]): DexScreenerMarketData {
+  if (!pairs.length) {
     return {
       marketCap: null,
       liquidityUsd: null,
       volume24h: null,
       txns24h: null,
       tokenAgeHours: null,
-      twitterHandle: null,
     };
   }
 
-  const pairCreatedAt = Number(pair.pairCreatedAt || 0);
+  const bestPair = pickBestPair(pairs);
+  const marketCapPair = pickBestPair(pairs.filter((pair) => hasPositiveValue(pair.marketCap)));
+  const fdvPair = marketCapPair ? null : pickBestPair(pairs.filter((pair) => hasPositiveValue(pair.fdv)));
+  const valuationPair = marketCapPair || fdvPair;
+  const pairCreatedAt = Number(bestPair?.pairCreatedAt || 0);
   const tokenAgeHours =
     pairCreatedAt > 0 ? Math.max(0, (Date.now() - pairCreatedAt) / (1000 * 60 * 60)) : null;
 
   return {
-    marketCap: pair.marketCap ?? pair.fdv ?? null,
-    liquidityUsd: pair.liquidity?.usd ?? null,
-    volume24h: pair.volume?.h24 ?? null,
-    txns24h: getPairTxns24h(pair),
+    marketCap: valuationPair?.marketCap ?? valuationPair?.fdv ?? null,
+    liquidityUsd: bestPair?.liquidity?.usd ?? null,
+    volume24h: bestPair?.volume?.h24 ?? null,
+    txns24h: bestPair ? getPairTxns24h(bestPair) : null,
     tokenAgeHours,
-    twitterHandle: getPairTwitterHandle(pair),
   };
+}
+
+function wait(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+async function fetchJsonWithRetry(url: string): Promise<unknown> {
+  let lastError: unknown = new Error("DexScreener request failed");
+  for (let attempt = 0; attempt < DEXSCREENER_MAX_ATTEMPTS; attempt += 1) {
+    let response: Response;
+    try {
+      response = await fetch(url, {
+        headers: { accept: "application/json" },
+        signal: AbortSignal.timeout(10_000),
+      });
+    } catch (error) {
+      lastError = error;
+      if (attempt < DEXSCREENER_MAX_ATTEMPTS - 1) await wait(200 * (2 ** attempt));
+      continue;
+    }
+
+    if (!response.ok) {
+      lastError = new Error(`DexScreener request failed with ${response.status}`);
+      if (![429, 500, 502, 503, 504].includes(response.status)) break;
+      const retryAfterSeconds = Number(response.headers.get("retry-after") || 0);
+      const delay = retryAfterSeconds > 0
+        ? Math.min(4_000, retryAfterSeconds * 1_000)
+        : 200 * (2 ** attempt);
+      if (attempt < DEXSCREENER_MAX_ATTEMPTS - 1) await wait(delay);
+      continue;
+    }
+
+    try {
+      return await response.json() as unknown;
+    } catch (error) {
+      lastError = error;
+      if (attempt < DEXSCREENER_MAX_ATTEMPTS - 1) await wait(200 * (2 ** attempt));
+    }
+  }
+  throw lastError;
+}
+
+async function fetchPairsWithRetry(url: string): Promise<DexScreenerPair[]> {
+  const payload = await fetchJsonWithRetry(url);
+  return Array.isArray(payload) ? payload as DexScreenerPair[] : [];
 }
 
 async function fetchDexScreenerPairs(chainId: string, tokenAddresses: string[]): Promise<DexScreenerPair[]> {
   const url = `https://api.dexscreener.com/tokens/v1/${chainId}/${tokenAddresses.join(",")}`;
-  const response = await fetch(url, {
-    headers: {
-      accept: "application/json",
-    },
-  });
+  return fetchPairsWithRetry(url);
+}
 
-  if (!response.ok) {
-    throw new Error(`DexScreener request failed with ${response.status}`);
-  }
+async function fetchDexScreenerTokenPairs(chainId: string, tokenAddress: string): Promise<DexScreenerPair[]> {
+  const url = `https://api.dexscreener.com/token-pairs/v1/${chainId}/${tokenAddress}`;
+  return fetchPairsWithRetry(url);
+}
 
-  const payload = (await response.json()) as DexScreenerPair[];
-  return Array.isArray(payload) ? payload : [];
+async function fetchDexScreenerSearchPairs(tokenAddress: string): Promise<DexScreenerPair[]> {
+  const query = new URLSearchParams({ q: tokenAddress });
+  const payload = await fetchJsonWithRetry(`https://api.dexscreener.com/latest/dex/search?${query}`);
+  if (!payload || typeof payload !== "object" || !("pairs" in payload)) return [];
+  const pairs = (payload as { pairs?: unknown }).pairs;
+  return Array.isArray(pairs) ? pairs as DexScreenerPair[] : [];
+}
+
+async function waitForTokenPairFallbackSlot(): Promise<void> {
+  const now = Date.now();
+  const scheduledAt = Math.max(now, nextTokenPairFallbackAt);
+  nextTokenPairFallbackAt = scheduledAt + TOKEN_PAIR_FALLBACK_INTERVAL_MS;
+  if (scheduledAt > now) await wait(scheduledAt - now);
+}
+
+function mergeMarketData(
+  primary: DexScreenerMarketData | undefined,
+  fallback: DexScreenerMarketData,
+): DexScreenerMarketData {
+  if (!primary) return fallback;
+  return {
+    marketCap: primary.marketCap ?? fallback.marketCap,
+    liquidityUsd: primary.liquidityUsd ?? fallback.liquidityUsd,
+    volume24h: primary.volume24h ?? fallback.volume24h,
+    txns24h: primary.txns24h ?? fallback.txns24h,
+    tokenAgeHours: primary.tokenAgeHours ?? fallback.tokenAgeHours,
+  };
+}
+
+function marketDataKey(chainId: string | null, tokenAddress: string): string {
+  return `${chainId || "unknown"}:${tokenAddress}`;
 }
 
 export async function fetchDexScreenerMarketData(tokens: Array<{
@@ -181,19 +213,31 @@ export async function fetchDexScreenerMarketData(tokens: Array<{
   networkName: string;
 }>): Promise<Map<string, DexScreenerMarketData>> {
   const grouped = new Map<string, Set<string>>();
+  const unknownAddresses = new Set<string>();
   for (const token of tokens) {
     const normalizedAddress = normalizeAddress(token.tokenAddress);
     if (!normalizedAddress) continue;
     const dexChainId = toDexScreenerChainId(token.chainId, token.networkName);
-    if (!dexChainId) continue;
+    if (!dexChainId) {
+      unknownAddresses.add(normalizedAddress);
+      continue;
+    }
     if (!grouped.has(dexChainId)) grouped.set(dexChainId, new Set());
     grouped.get(dexChainId)!.add(normalizedAddress);
   }
 
   const results = new Map<string, DexScreenerMarketData>();
+  const fallbackTargets: Array<{ chainId: string | null; tokenAddress: string }> =
+    Array.from(unknownAddresses, (tokenAddress) => ({ chainId: null, tokenAddress }));
   for (const [dexChainId, addresses] of grouped.entries()) {
     for (const addressBatch of chunk(Array.from(addresses), DEXSCREENER_BATCH_LIMIT)) {
-      const pairs = await fetchDexScreenerPairs(dexChainId, addressBatch);
+      let pairs: DexScreenerPair[];
+      try {
+        pairs = await fetchDexScreenerPairs(dexChainId, addressBatch);
+      } catch (_error) {
+        fallbackTargets.push(...addressBatch.map((tokenAddress) => ({ chainId: dexChainId, tokenAddress })));
+        continue;
+      }
       const byToken = new Map<string, DexScreenerPair[]>();
 
       for (const pair of pairs) {
@@ -204,11 +248,39 @@ export async function fetchDexScreenerMarketData(tokens: Array<{
       }
 
       for (const tokenAddress of addressBatch) {
-        const bestPair = pickBestPair(byToken.get(tokenAddress) || []);
-        results.set(`${dexChainId}:${tokenAddress}`, toMarketData(bestPair));
+        const tokenPairs = byToken.get(tokenAddress) || [];
+        const marketData = toMarketData(tokenPairs);
+        if (tokenPairs.length) results.set(marketDataKey(dexChainId, tokenAddress), marketData);
+        if (marketData.marketCap == null) fallbackTargets.push({ chainId: dexChainId, tokenAddress });
       }
     }
   }
+
+  let nextFallbackIndex = 0;
+  const fallbackWorkers = Array.from(
+    { length: Math.min(TOKEN_PAIR_FALLBACK_CONCURRENCY, fallbackTargets.length) },
+    async () => {
+      while (nextFallbackIndex < fallbackTargets.length) {
+        const target = fallbackTargets[nextFallbackIndex];
+        nextFallbackIndex += 1;
+        await waitForTokenPairFallbackSlot();
+        try {
+          const pairs = target.chainId
+            ? await fetchDexScreenerTokenPairs(target.chainId, target.tokenAddress)
+            : (await fetchDexScreenerSearchPairs(target.tokenAddress)).filter(
+              (pair) => normalizeAddress(pair.baseToken?.address) === target.tokenAddress,
+            );
+          const fallbackData = toMarketData(pairs);
+          const key = marketDataKey(target.chainId, target.tokenAddress);
+          const marketData = mergeMarketData(results.get(key), fallbackData);
+          if (marketData.marketCap != null || pairs.length) results.set(key, marketData);
+        } catch (_error) {
+          // Keep any batch result and let the caller report unresolved market data.
+        }
+      }
+    },
+  );
+  await Promise.all(fallbackWorkers);
 
   return results;
 }
@@ -228,6 +300,7 @@ const CHAIN_ID_MAP: Record<number, string> = {
   59144: "linea",
   81457: "blast",
   34443: "mode",
+  999: "hyperevm",
   1151111081: "solana",
 };
 
@@ -238,10 +311,14 @@ const NETWORK_NAME_MAP: Record<string, string> = {
   "bnb chain": "bsc",
   ethereum: "ethereum",
   gnosis: "gnosis",
+  hyperevm: "hyperevm",
+  "hyper evm": "hyperevm",
+  "hyperliquid evm": "hyperevm",
   linea: "linea",
   mode: "mode",
   optimism: "optimism",
   polygon: "polygon",
+  robinhood: "robinhood",
   solana: "solana",
   sonic: "sonic",
   unichain: "unichain",

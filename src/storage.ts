@@ -1,5 +1,5 @@
 import { resolveWorkspacePaths } from "./runtime-paths";
-import { withOpportunityScore } from "./scoring";
+import { ScoreContext, ScoreHistorySample, withOpportunityScore } from "./scoring";
 import { createPostgresStorage } from "./storage-postgres";
 import { SnapshotTokenForEnrichment, SnapshotUpdate, StorageAdapter } from "./storage-types";
 import { normalizeTokenName } from "./token-name";
@@ -15,6 +15,14 @@ import {
   TokenOverviewRow,
   TokenScorePoint,
 } from "./types";
+
+function normalizeFavoriteEntityKeys(names: string[] = []): string[] {
+  return [...new Set(names.map((name) => String(name || "").trim().toLowerCase()).filter(Boolean))];
+}
+
+function splitFavoriteEntityNames(value: unknown): string[] {
+  return String(value || "").split(",").map((name) => name.trim()).filter(Boolean);
+}
 
 function normalizeRawHoldingTokenName(row: RawHoldingRecord): string {
   return normalizeTokenName({
@@ -52,7 +60,7 @@ function createSqliteStorage(cwd: string): StorageAdapter {
     CREATE TABLE IF NOT EXISTS entities (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       entity_name TEXT NOT NULL,
-      full_zapper_link TEXT NOT NULL UNIQUE,
+      source_url TEXT NOT NULL UNIQUE,
       resolved_label TEXT,
       link_type TEXT NOT NULL,
       created_at TEXT NOT NULL,
@@ -72,7 +80,7 @@ function createSqliteStorage(cwd: string): StorageAdapter {
     CREATE TABLE IF NOT EXISTS holding_snapshots (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       status TEXT NOT NULL,
-      zapper_key_label TEXT,
+      provider_label TEXT,
       total_entities INTEGER NOT NULL DEFAULT 0,
       entities_completed INTEGER NOT NULL DEFAULT 0,
       entities_failed INTEGER NOT NULL DEFAULT 0,
@@ -136,6 +144,7 @@ function createSqliteStorage(cwd: string): StorageAdapter {
 
     CREATE INDEX IF NOT EXISTS idx_entity_wallets_entity ON entity_wallets(entity_id, wallet_index);
     CREATE INDEX IF NOT EXISTS idx_raw_holdings_snapshot ON raw_holdings(snapshot_id, token_key, balance_usd DESC);
+    CREATE INDEX IF NOT EXISTS idx_raw_holdings_token_history ON raw_holdings(token_key, snapshot_id, balance_usd DESC, entity_id);
     CREATE INDEX IF NOT EXISTS idx_snapshot_created ON holding_snapshots(created_at DESC, id DESC);
   `);
 
@@ -144,16 +153,11 @@ function createSqliteStorage(cwd: string): StorageAdapter {
   ensureColumn("raw_holdings", "volume_24h", "REAL");
   ensureColumn("raw_holdings", "txns_24h", "REAL");
   ensureColumn("raw_holdings", "token_age_hours", "REAL");
-  ensureColumn("raw_holdings", "moni_score", "REAL");
-  ensureColumn("raw_holdings", "moni_level", "INTEGER");
-  ensureColumn("raw_holdings", "moni_level_name", "TEXT");
-  ensureColumn("raw_holdings", "moni_momentum_score_pct", "REAL");
-  ensureColumn("raw_holdings", "moni_momentum_rank", "INTEGER");
 
   const upsertEntity = db.prepare(`
-    INSERT INTO entities (entity_name, full_zapper_link, resolved_label, link_type, created_at, updated_at)
-    VALUES (@entityName, @fullZapperLink, @resolvedLabel, @linkType, @createdAt, @updatedAt)
-    ON CONFLICT(full_zapper_link) DO UPDATE SET
+    INSERT INTO entities (entity_name, source_url, resolved_label, link_type, created_at, updated_at)
+    VALUES (@entityName, @sourceUrl, @resolvedLabel, @linkType, @createdAt, @updatedAt)
+    ON CONFLICT(source_url) DO UPDATE SET
       entity_name = excluded.entity_name,
       resolved_label = excluded.resolved_label,
       link_type = excluded.link_type,
@@ -164,10 +168,10 @@ function createSqliteStorage(cwd: string): StorageAdapter {
   const findEntityForImport = db.prepare(`
     SELECT id
     FROM entities
-    WHERE full_zapper_link = @fullZapperLink
+    WHERE source_url = @sourceUrl
        OR lower(entity_name) = lower(@entityName)
     ORDER BY
-      CASE WHEN full_zapper_link = @fullZapperLink THEN 0 ELSE 1 END,
+      CASE WHEN source_url = @sourceUrl THEN 0 ELSE 1 END,
       datetime(updated_at) DESC,
       id DESC
     LIMIT 1
@@ -175,7 +179,7 @@ function createSqliteStorage(cwd: string): StorageAdapter {
   const updateEntityForImport = db.prepare(`
     UPDATE entities
     SET entity_name = @entityName,
-        full_zapper_link = @fullZapperLink,
+        source_url = @sourceUrl,
         resolved_label = @resolvedLabel,
         link_type = @linkType,
         updated_at = @updatedAt
@@ -202,8 +206,8 @@ function createSqliteStorage(cwd: string): StorageAdapter {
   `);
 
   const insertSnapshot = db.prepare(`
-    INSERT INTO holding_snapshots (status, zapper_key_label, total_entities, created_at)
-    VALUES (@status, @zapperKeyLabel, @totalEntities, @createdAt)
+    INSERT INTO holding_snapshots (status, provider_label, total_entities, created_at)
+    VALUES (@status, @providerLabel, @totalEntities, @createdAt)
   `);
 
   const updateSnapshotStmt = db.prepare(`
@@ -243,32 +247,21 @@ function createSqliteStorage(cwd: string): StorageAdapter {
     INSERT INTO raw_holdings (
       snapshot_id, entity_id, token_key, token_symbol, token_name, token_address, network_name,
       chain_id, balance, balance_raw, balance_usd, price, market_cap, liquidity_usd, volume_24h, txns_24h,
-      token_age_hours, moni_score, moni_level, moni_level_name, moni_momentum_score_pct, moni_momentum_rank, fetched_at
+      token_age_hours, fetched_at
     ) VALUES (
       @snapshotId, @entityId, @tokenKey, @tokenSymbol, @tokenName, @tokenAddress, @networkName,
       @chainId, @balance, @balanceRaw, @balanceUsd, @price, @marketCap, @liquidityUsd, @volume24h, @txns24h,
-      @tokenAgeHours, @moniScore, @moniLevel, @moniLevelName, @moniMomentumScorePct, @moniMomentumRank, @fetchedAt
+      @tokenAgeHours, @fetchedAt
     )
   `);
 
   const updateMarketDataForTokenStmt = db.prepare(`
     UPDATE raw_holdings
-    SET market_cap = @marketCap,
+    SET market_cap = COALESCE(@marketCap, market_cap),
         liquidity_usd = @liquidityUsd,
         volume_24h = @volume24h,
         txns_24h = @txns24h,
         token_age_hours = @tokenAgeHours
-    WHERE snapshot_id = @snapshotId
-      AND token_key = @tokenKey
-  `);
-
-  const updateMoniDataForTokenStmt = db.prepare(`
-    UPDATE raw_holdings
-    SET moni_score = @moniScore,
-        moni_level = @moniLevel,
-        moni_level_name = @moniLevelName,
-        moni_momentum_score_pct = @moniMomentumScorePct,
-        moni_momentum_rank = @moniMomentumRank
     WHERE snapshot_id = @snapshotId
       AND token_key = @tokenKey
   `);
@@ -301,11 +294,11 @@ function createSqliteStorage(cwd: string): StorageAdapter {
     for (const entity of entities) {
       const existing = findEntityForImport.get({
         entityName: entity.entityName,
-        fullZapperLink: entity.fullZapperLink,
+        sourceUrl: entity.sourceUrl,
       }) as { id: number } | undefined;
       const result = existing || (upsertEntity.get({
         entityName: entity.entityName,
-        fullZapperLink: entity.fullZapperLink,
+        sourceUrl: entity.sourceUrl,
         resolvedLabel: entity.resolvedLabel,
         linkType: entity.linkType,
         createdAt: now,
@@ -316,7 +309,7 @@ function createSqliteStorage(cwd: string): StorageAdapter {
         updateEntityForImport.run({
           id: existing.id,
           entityName: entity.entityName,
-          fullZapperLink: entity.fullZapperLink,
+          sourceUrl: entity.sourceUrl,
           resolvedLabel: entity.resolvedLabel,
           linkType: entity.linkType,
           updatedAt: now,
@@ -357,6 +350,188 @@ function createSqliteStorage(cwd: string): StorageAdapter {
     }
   });
 
+  function entityConvictionByTokenForSnapshots(snapshotIds: number[], minBalanceUsd: number): Map<number, Map<string, number>> {
+    if (!snapshotIds.length) return new Map();
+    const placeholders = snapshotIds.map(() => "?").join(", ");
+    const positions = db.prepare(
+      `SELECT rh.snapshot_id as snapshotId, rh.token_key as tokenKey, lower(e.entity_name) as entityKey, MAX(rh.balance_usd) as balanceUsd
+       FROM raw_holdings rh
+       INNER JOIN entities e ON e.id = rh.entity_id
+       LEFT JOIN token_blacklist bl ON bl.token_key = rh.token_key AND bl.is_active = 1
+       WHERE rh.snapshot_id IN (${placeholders}) AND rh.balance_usd >= ? AND bl.id IS NULL
+       GROUP BY rh.snapshot_id, rh.token_key, lower(e.entity_name)`,
+    ).all(...snapshotIds, minBalanceUsd) as Array<{ snapshotId: number; tokenKey: string; entityKey: string; balanceUsd: number }>;
+    const bySnapshotEntity = new Map<number, Map<string, number[]>>();
+    for (const position of positions) {
+      const byEntity = bySnapshotEntity.get(position.snapshotId) || new Map<string, number[]>();
+      const values = byEntity.get(position.entityKey) || [];
+      values.push(Number(position.balanceUsd || 0));
+      byEntity.set(position.entityKey, values);
+      bySnapshotEntity.set(position.snapshotId, byEntity);
+    }
+    const medians = new Map<number, Map<string, number>>();
+    for (const [snapshotId, byEntity] of bySnapshotEntity) {
+      const snapshotMedians = new Map<string, number>();
+      for (const [entityKey, values] of byEntity) {
+        values.sort((left, right) => left - right);
+        const middle = Math.floor(values.length / 2);
+        snapshotMedians.set(entityKey, values.length % 2 ? values[middle] : (values[middle - 1] + values[middle]) / 2);
+      }
+      medians.set(snapshotId, snapshotMedians);
+    }
+    const totals = new Map<number, Map<string, { total: number; count: number }>>();
+    for (const position of positions) {
+      const median = Math.max(1, medians.get(position.snapshotId)?.get(position.entityKey) || 1);
+      const ratio = Number(position.balanceUsd || 0) / median;
+      const conviction = ratio < 0.5 ? 0.75 : ratio < 1 ? 0.9 : ratio < 2 ? 1.1 : ratio < 4 ? 1.35 : 1.6;
+      const byToken = totals.get(position.snapshotId) || new Map<string, { total: number; count: number }>();
+      const existing = byToken.get(position.tokenKey) || { total: 0, count: 0 };
+      existing.total += conviction;
+      existing.count += 1;
+      byToken.set(position.tokenKey, existing);
+      totals.set(position.snapshotId, byToken);
+    }
+    const output = new Map<number, Map<string, number>>();
+    for (const [snapshotId, byToken] of totals) {
+      output.set(snapshotId, new Map([...byToken].map(([tokenKey, value]) => [tokenKey, value.total / Math.max(1, value.count)])));
+    }
+    return output;
+  }
+
+  function entityConvictionByToken(snapshotId: number, minBalanceUsd: number): Map<string, number> {
+    return entityConvictionByTokenForSnapshots([snapshotId], minBalanceUsd).get(snapshotId) || new Map();
+  }
+
+  function entityConvictionForTokenAtSnapshots(snapshotIds: number[], tokenKey: string, minBalanceUsd: number): Map<number, number> {
+    if (!snapshotIds.length) return new Map();
+    const placeholders = snapshotIds.map(() => "?").join(", ");
+    const positions = db.prepare(
+      `WITH target_entities AS (
+         SELECT rh.snapshot_id as snapshotId, lower(e.entity_name) as entityKey
+         FROM raw_holdings rh
+         INNER JOIN entities e ON e.id = rh.entity_id
+         LEFT JOIN token_blacklist bl ON bl.token_key = rh.token_key AND bl.is_active = 1
+         WHERE rh.snapshot_id IN (${placeholders})
+           AND rh.token_key = ?
+           AND rh.balance_usd >= ?
+           AND bl.id IS NULL
+         GROUP BY rh.snapshot_id, lower(e.entity_name)
+       )
+       SELECT rh.snapshot_id as snapshotId, rh.token_key as tokenKey,
+              lower(e.entity_name) as entityKey, MAX(rh.balance_usd) as balanceUsd
+       FROM raw_holdings rh
+       INNER JOIN entities e ON e.id = rh.entity_id
+       INNER JOIN target_entities te
+         ON te.snapshotId = rh.snapshot_id AND te.entityKey = lower(e.entity_name)
+       LEFT JOIN token_blacklist bl ON bl.token_key = rh.token_key AND bl.is_active = 1
+       WHERE rh.snapshot_id IN (${placeholders})
+         AND rh.balance_usd >= ?
+         AND bl.id IS NULL
+       GROUP BY rh.snapshot_id, rh.token_key, lower(e.entity_name)`,
+    ).all(...snapshotIds, tokenKey, minBalanceUsd, ...snapshotIds, minBalanceUsd) as Array<{
+      snapshotId: number;
+      tokenKey: string;
+      entityKey: string;
+      balanceUsd: number;
+    }>;
+    const bySnapshotEntity = new Map<number, Map<string, number[]>>();
+    for (const position of positions) {
+      const byEntity = bySnapshotEntity.get(position.snapshotId) || new Map<string, number[]>();
+      const values = byEntity.get(position.entityKey) || [];
+      values.push(Number(position.balanceUsd || 0));
+      byEntity.set(position.entityKey, values);
+      bySnapshotEntity.set(position.snapshotId, byEntity);
+    }
+    const medians = new Map<number, Map<string, number>>();
+    for (const [snapshotId, byEntity] of bySnapshotEntity) {
+      const snapshotMedians = new Map<string, number>();
+      for (const [entityKey, values] of byEntity) {
+        values.sort((left, right) => left - right);
+        const middle = Math.floor(values.length / 2);
+        snapshotMedians.set(entityKey, values.length % 2 ? values[middle] : (values[middle - 1] + values[middle]) / 2);
+      }
+      medians.set(snapshotId, snapshotMedians);
+    }
+    const totals = new Map<number, { total: number; count: number }>();
+    for (const position of positions) {
+      if (position.tokenKey !== tokenKey) continue;
+      const median = Math.max(1, medians.get(position.snapshotId)?.get(position.entityKey) || 1);
+      const ratio = Number(position.balanceUsd || 0) / median;
+      const conviction = ratio < 0.5 ? 0.75 : ratio < 1 ? 0.9 : ratio < 2 ? 1.1 : ratio < 4 ? 1.35 : 1.6;
+      const existing = totals.get(position.snapshotId) || { total: 0, count: 0 };
+      existing.total += conviction;
+      existing.count += 1;
+      totals.set(position.snapshotId, existing);
+    }
+    return new Map([...totals].map(([snapshotId, value]) => [snapshotId, value.total / Math.max(1, value.count)]));
+  }
+
+  function previousScoreSamples(snapshotId: number, minBalanceUsd: number, favoriteKeys: string[]): Map<string, ScoreHistorySample[]> {
+    const snapshots = db.prepare(
+      `SELECT id, COALESCE(finished_at, created_at) as at
+       FROM holding_snapshots
+       WHERE id < ? AND status = 'success'
+       ORDER BY datetime(COALESCE(finished_at, created_at)) DESC, id DESC
+       LIMIT 2`,
+    ).all(snapshotId) as Array<{ id: number; at: string }>;
+    if (!snapshots.length) return new Map();
+
+    const snapshotPlaceholders = snapshots.map(() => "?").join(", ");
+    const favoritePlaceholders = favoriteKeys.map(() => "?").join(", ");
+    const favoriteExpression = favoriteKeys.length
+      ? `SUM(CASE WHEN entityKey IN (${favoritePlaceholders}) THEN balanceUsd ELSE 0 END)`
+      : "0";
+    const favoriteCountExpression = favoriteKeys.length
+      ? `SUM(CASE WHEN entityKey IN (${favoritePlaceholders}) THEN 1 ELSE 0 END)`
+      : "0";
+    const rows = db.prepare(
+      `WITH canonical AS (
+         SELECT rh.snapshot_id as snapshotId, rh.token_key as tokenKey, lower(e.entity_name) as entityKey,
+                MAX(rh.balance_usd) as balanceUsd,
+                MAX(CAST(NULLIF(rh.balance, '') AS REAL)) as tokenAmount
+         FROM raw_holdings rh
+         INNER JOIN entities e ON e.id = rh.entity_id
+         LEFT JOIN token_blacklist bl ON bl.token_key = rh.token_key AND bl.is_active = 1
+         WHERE rh.snapshot_id IN (${snapshotPlaceholders}) AND rh.balance_usd >= ? AND bl.id IS NULL
+         GROUP BY rh.snapshot_id, rh.token_key, lower(e.entity_name)
+       )
+       SELECT snapshotId, tokenKey, ROUND(SUM(balanceUsd), 2) as holdingsUsd,
+              SUM(tokenAmount) as tokenAmount, COUNT(*) as smwIn,
+              ${favoriteExpression} as favoriteHoldingsUsd,
+              ${favoriteCountExpression} as favoriteEntityCount
+       FROM canonical
+       GROUP BY snapshotId, tokenKey`,
+    ).all(...snapshots.map((snapshot) => snapshot.id), minBalanceUsd, ...favoriteKeys, ...favoriteKeys) as Array<{
+      snapshotId: number;
+      tokenKey: string;
+      holdingsUsd: number;
+      tokenAmount: number;
+      smwIn: number;
+      favoriteHoldingsUsd: number;
+      favoriteEntityCount: number;
+    }>;
+    const snapshotById = new Map(snapshots.map((snapshot) => [snapshot.id, snapshot]));
+    const grouped = new Map<string, ScoreHistorySample[]>();
+    for (const row of rows) {
+      const snapshot = snapshotById.get(row.snapshotId);
+      if (!snapshot) continue;
+      const list = grouped.get(row.tokenKey) || [];
+      list.push({
+        tokenAmount: Number(row.tokenAmount || 0),
+        holdingsUsd: Number(row.holdingsUsd || 0),
+        smwIn: Number(row.smwIn || 0),
+        favoriteEntityCount: Number(row.favoriteEntityCount || 0),
+        favoriteHoldingsUsd: Number(row.favoriteHoldingsUsd || 0),
+        at: snapshot.at,
+      });
+      grouped.set(row.tokenKey, list);
+    }
+    for (const list of grouped.values()) {
+      list.sort((left, right) => Date.parse(right.at) - Date.parse(left.at));
+    }
+    return grouped;
+  }
+
   return {
     close(): void {
       db.close();
@@ -367,7 +542,7 @@ function createSqliteStorage(cwd: string): StorageAdapter {
     getEntities(): Array<EntityRecord & { wallets: EntityWalletRecord[] }> {
       const entities = db
         .prepare(
-          `SELECT id, entity_name as entityName, full_zapper_link as fullZapperLink,
+          `SELECT id, entity_name as entityName, source_url as sourceUrl,
                   resolved_label as resolvedLabel, link_type as linkType,
                   created_at as createdAt, updated_at as updatedAt
            FROM entities
@@ -393,10 +568,31 @@ function createSqliteStorage(cwd: string): StorageAdapter {
       }));
     },
 
-    createSnapshot(totalEntities: number, zapperKeyLabel: string | null): number {
+    getEntitiesByLinks(sourceUrls: string[]): Array<EntityRecord & { wallets: EntityWalletRecord[] }> {
+      if (!sourceUrls.length) return [];
+      const placeholders = sourceUrls.map(() => "?").join(", ");
+      const entities = db
+        .prepare(
+          `SELECT id, entity_name as entityName, source_url as sourceUrl,
+                  resolved_label as resolvedLabel, link_type as linkType,
+                  created_at as createdAt, updated_at as updatedAt
+           FROM entities WHERE source_url IN (${placeholders}) ORDER BY id ASC`,
+        )
+        .all(...sourceUrls) as EntityRecord[];
+      const walletsStmt = db.prepare(
+        `SELECT entity_id as entityId, wallet_address as walletAddress, wallet_index as walletIndex
+         FROM entity_wallets WHERE entity_id = ? ORDER BY wallet_index ASC`,
+      );
+      return entities.map((entity) => ({
+        ...entity,
+        wallets: walletsStmt.all(entity.id) as EntityWalletRecord[],
+      }));
+    },
+
+    createSnapshot(totalEntities: number, providerLabel: string | null): number {
       const result = insertSnapshot.run({
         status: "running",
-        zapperKeyLabel,
+        providerLabel,
         totalEntities,
         createdAt: new Date().toISOString(),
       });
@@ -451,56 +647,10 @@ function createSqliteStorage(cwd: string): StorageAdapter {
       });
     },
 
-    updateSnapshotTokenMoniData(snapshotId: number, tokenKey: string, moniData: {
-      moniScore: number | null;
-      moniLevel: number | null;
-      moniLevelName: string | null;
-      moniMomentumScorePct: number | null;
-      moniMomentumRank: number | null;
-    }): void {
-      updateMoniDataForTokenStmt.run({
-        snapshotId,
-        tokenKey,
-        moniScore: moniData.moniScore,
-        moniLevel: moniData.moniLevel,
-        moniLevelName: moniData.moniLevelName,
-        moniMomentumScorePct: moniData.moniMomentumScorePct,
-        moniMomentumRank: moniData.moniMomentumRank,
-      });
-    },
-
-    getLatestTokenMoniDataBeforeSnapshot(snapshotId: number, tokenKey: string) {
-      const row = db
-        .prepare(
-          `SELECT
-              MAX(rh.moni_score) as moniScore,
-              MAX(rh.moni_level) as moniLevel,
-              MAX(rh.moni_level_name) as moniLevelName,
-              MAX(rh.moni_momentum_score_pct) as moniMomentumScorePct,
-              MAX(rh.moni_momentum_rank) as moniMomentumRank
-           FROM raw_holdings rh
-           WHERE rh.token_key = ?
-             AND rh.snapshot_id < ?
-             AND rh.moni_score IS NOT NULL
-           GROUP BY rh.snapshot_id
-           ORDER BY rh.snapshot_id DESC
-           LIMIT 1`,
-        )
-        .get(tokenKey, snapshotId) as {
-          moniScore: number;
-          moniLevel: number;
-          moniLevelName: string;
-          moniMomentumScorePct: number | null;
-          moniMomentumRank: number | null;
-        } | undefined;
-
-      return row || null;
-    },
-
     getSnapshotSummaries(): SnapshotRecord[] {
       return db
         .prepare(
-          `SELECT id, status, zapper_key_label as zapperKeyLabel, total_entities as totalEntities,
+          `SELECT id, status, provider_label as providerLabel, total_entities as totalEntities,
                   entities_completed as entitiesCompleted, entities_failed as entitiesFailed,
                   total_rows as totalRows,
                   (
@@ -527,7 +677,7 @@ function createSqliteStorage(cwd: string): StorageAdapter {
       return (
         (db
           .prepare(
-            `SELECT id, status, zapper_key_label as zapperKeyLabel, total_entities as totalEntities,
+            `SELECT id, status, provider_label as providerLabel, total_entities as totalEntities,
                     entities_completed as entitiesCompleted, entities_failed as entitiesFailed,
                     total_rows as totalRows,
                     (
@@ -594,26 +744,29 @@ function createSqliteStorage(cwd: string): StorageAdapter {
       minSmwIn = 1,
       minLiquidityUsd = 11111,
       maxMarketCapUsd: number | null = null,
+      favoriteEntityNames: string[] = [],
     ): TokenOverviewRow[] {
+      const favoriteEntityKeys = normalizeFavoriteEntityKeys(favoriteEntityNames);
+      const favoritePlaceholders = favoriteEntityKeys.map((_, index) => `@favorite${index}`).join(", ");
+      const favoriteExpression = favoriteEntityKeys.length ? `CASE WHEN lower(e.entity_name) IN (${favoritePlaceholders}) THEN 1 ELSE 0 END` : "0";
+      const favoriteParams = Object.fromEntries(favoriteEntityKeys.map((name, index) => [`favorite${index}`, name]));
       const rows = db
         .prepare(
           `WITH canonical_holdings AS (
              SELECT
                rh.token_key,
                lower(e.entity_name) as entity_key,
+               MAX(e.entity_name) as entityName,
+               MAX(${favoriteExpression}) as isFavoriteEntity,
                MAX(rh.token_symbol) as tokenSymbol,
                MAX(rh.token_name) as tokenName,
                MAX(rh.network_name) as networkName,
                MAX(rh.chain_id) as chainId,
                MAX(rh.token_address) as tokenAddress,
                MAX(rh.balance_usd) as balanceUsd,
+               MAX(CAST(NULLIF(rh.balance, '') AS REAL)) as tokenAmount,
                MAX(rh.market_cap) as marketCap,
                MAX(rh.token_age_hours) as tokenAgeHours,
-               MAX(rh.moni_score) as moniScore,
-               MAX(rh.moni_level) as moniLevel,
-               MAX(rh.moni_level_name) as moniLevelName,
-               MAX(rh.moni_momentum_score_pct) as moniMomentumScorePct,
-               MAX(rh.moni_momentum_rank) as moniMomentumRank,
                MAX(rh.volume_24h) as volume24h,
                MAX(rh.txns_24h) as txns24h,
                MAX(rh.liquidity_usd) as liquidityUsd
@@ -635,14 +788,13 @@ function createSqliteStorage(cwd: string): StorageAdapter {
                MAX(chainId) as chainId,
                MAX(tokenAddress) as tokenAddress,
                ROUND(SUM(balanceUsd), 2) as holdingsUsd,
+               SUM(tokenAmount) as tokenAmount,
                COUNT(*) as smwIn,
+               SUM(isFavoriteEntity) as favoriteEntityCount,
+               ROUND(SUM(CASE WHEN isFavoriteEntity = 1 THEN balanceUsd ELSE 0 END), 2) as favoriteHoldingsUsd,
+               GROUP_CONCAT(DISTINCT CASE WHEN isFavoriteEntity = 1 THEN entityName END) as favoriteEntityNames,
                MAX(marketCap) as marketCap,
                MAX(tokenAgeHours) as tokenAgeHours,
-               MAX(moniScore) as moniScore,
-               MAX(moniLevel) as moniLevel,
-               MAX(moniLevelName) as moniLevelName,
-               MAX(moniMomentumScorePct) as moniMomentumScorePct,
-               MAX(moniMomentumRank) as moniMomentumRank,
                MAX(volume24h) as volume24h,
                MAX(txns24h) as txns24h,
                MAX(liquidityUsd) as liquidityUsd
@@ -676,70 +828,15 @@ function createSqliteStorage(cwd: string): StorageAdapter {
               tokenAddress,
               holdingsUsd,
               smwIn,
+              favoriteEntityCount,
+              favoriteHoldingsUsd,
+              favoriteEntityNames,
               marketCap,
               tokenAgeHours,
-              COALESCE(
-                moniScore,
-                (
-                  SELECT prev.moni_score
-                  FROM raw_holdings prev
-                  WHERE prev.token_key = token_rollup.tokenKey
-                    AND prev.snapshot_id < @snapshotId
-                    AND prev.moni_score IS NOT NULL
-                  ORDER BY prev.snapshot_id DESC
-                  LIMIT 1
-                )
-              ) as moniScore,
-              COALESCE(
-                moniLevel,
-                (
-                  SELECT prev.moni_level
-                  FROM raw_holdings prev
-                  WHERE prev.token_key = token_rollup.tokenKey
-                    AND prev.snapshot_id < @snapshotId
-                    AND prev.moni_score IS NOT NULL
-                  ORDER BY prev.snapshot_id DESC
-                  LIMIT 1
-                )
-              ) as moniLevel,
-              COALESCE(
-                moniLevelName,
-                (
-                  SELECT prev.moni_level_name
-                  FROM raw_holdings prev
-                  WHERE prev.token_key = token_rollup.tokenKey
-                    AND prev.snapshot_id < @snapshotId
-                    AND prev.moni_score IS NOT NULL
-                  ORDER BY prev.snapshot_id DESC
-                  LIMIT 1
-                )
-              ) as moniLevelName,
-              COALESCE(
-                moniMomentumScorePct,
-                (
-                  SELECT prev.moni_momentum_score_pct
-                  FROM raw_holdings prev
-                  WHERE prev.token_key = token_rollup.tokenKey
-                    AND prev.snapshot_id < @snapshotId
-                    AND prev.moni_score IS NOT NULL
-                  ORDER BY prev.snapshot_id DESC
-                  LIMIT 1
-                )
-              ) as moniMomentumScorePct,
-              COALESCE(
-                moniMomentumRank,
-                (
-                  SELECT prev.moni_momentum_rank
-                  FROM raw_holdings prev
-                  WHERE prev.token_key = token_rollup.tokenKey
-                    AND prev.snapshot_id < @snapshotId
-                    AND prev.moni_score IS NOT NULL
-                  ORDER BY prev.snapshot_id DESC
-                  LIMIT 1
-                )
-              ) as moniMomentumRank,
               volume24h,
-              txns24h
+              txns24h,
+              liquidityUsd,
+              tokenAmount
            FROM token_rollup
            ORDER BY smwIn DESC, holdingsUsd DESC, tokenSymbol COLLATE NOCASE ASC`,
         )
@@ -749,10 +846,42 @@ function createSqliteStorage(cwd: string): StorageAdapter {
           minSmwIn,
           minLiquidityUsd,
           maxMarketCapUsd,
+          ...favoriteParams,
         }) as Array<
         Omit<TokenOverviewRow, "score">
       >;
-      return rows.map(withOpportunityScore);
+      const currentSnapshot = db.prepare(
+        `SELECT COALESCE(finished_at, created_at) as at FROM holding_snapshots WHERE id = ?`,
+      ).get(snapshotId) as { at: string } | undefined;
+      const convictionByToken = entityConvictionByToken(snapshotId, minBalanceUsd);
+      const previousByToken = previousScoreSamples(snapshotId, minBalanceUsd, favoriteEntityKeys);
+      return rows.map((row) => {
+        const normalized = {
+          ...row,
+          favoriteEntityCount: Number(row.favoriteEntityCount || 0),
+          favoriteHoldingsUsd: Number(row.favoriteHoldingsUsd || 0),
+          favoriteEntityNames: splitFavoriteEntityNames(row.favoriteEntityNames),
+          tokenAmount: Number(row.tokenAmount || 0),
+          liquidityUsd: row.liquidityUsd == null ? null : Number(row.liquidityUsd),
+          entityConviction: convictionByToken.get(row.tokenKey) || 1,
+        };
+        const previous = previousByToken.get(row.tokenKey) || [];
+        const currentSample: ScoreHistorySample = {
+          tokenAmount: normalized.tokenAmount,
+          holdingsUsd: normalized.holdingsUsd,
+          smwIn: normalized.smwIn,
+          favoriteEntityCount: normalized.favoriteEntityCount,
+          favoriteHoldingsUsd: normalized.favoriteHoldingsUsd,
+          at: currentSnapshot?.at || new Date().toISOString(),
+        };
+        const context: ScoreContext = {
+          currentAt: currentSample.at,
+          previous: previous[0],
+          previousPrevious: previous[1],
+          entityConviction: normalized.entityConviction,
+        };
+        return withOpportunityScore(normalized, context);
+      });
     },
 
     getTokenHolders(snapshotId: number, tokenKey: string, minBalanceUsd = 111): TokenHolderRow[] {
@@ -777,7 +906,16 @@ function createSqliteStorage(cwd: string): StorageAdapter {
         .all(snapshotId, tokenKey, minBalanceUsd) as TokenHolderRow[];
     },
 
-    getTokenScoreHistory(tokenKey: string, minBalanceUsd = 111): TokenScorePoint[] {
+    getTokenScoreHistory(tokenKey: string, minBalanceUsd = 111, favoriteEntityNames: string[] = [], limit: number | null = null): TokenScorePoint[] {
+      const favoriteEntityKeys = normalizeFavoriteEntityKeys(favoriteEntityNames);
+      const historyLimit = Number.isFinite(Number(limit)) && Number(limit) > 0 ? Math.min(100, Math.trunc(Number(limit))) : null;
+      const queryLimit = historyLimit == null ? null : historyLimit + 2;
+      const historyOrder = queryLimit == null ? "ASC" : "DESC";
+      const historyLimitClause = queryLimit == null ? "" : "LIMIT ?";
+      const favoritePlaceholders = favoriteEntityKeys.map(() => "?").join(", ");
+      const favoriteFlagExpression = favoriteEntityKeys.length
+        ? `MAX(CASE WHEN lower(e.entity_name) IN (${favoritePlaceholders}) THEN 1 ELSE 0 END)`
+        : "0";
       const rows = db
         .prepare(
           `WITH canonical_holdings AS (
@@ -785,21 +923,19 @@ function createSqliteStorage(cwd: string): StorageAdapter {
                rh.snapshot_id,
                rh.token_key,
                lower(e.entity_name) as entity_key,
+               ${favoriteFlagExpression} as isFavorite,
                MAX(rh.token_symbol) as tokenSymbol,
                MAX(rh.token_name) as tokenName,
                MAX(rh.network_name) as networkName,
                MAX(rh.chain_id) as chainId,
                MAX(rh.token_address) as tokenAddress,
                MAX(rh.balance_usd) as balanceUsd,
+               MAX(CAST(NULLIF(rh.balance, '') AS REAL)) as tokenAmount,
                MAX(rh.market_cap) as marketCap,
                MAX(rh.token_age_hours) as tokenAgeHours,
-               MAX(rh.moni_score) as moniScore,
-               MAX(rh.moni_level) as moniLevel,
-               MAX(rh.moni_level_name) as moniLevelName,
-               MAX(rh.moni_momentum_score_pct) as moniMomentumScorePct,
-               MAX(rh.moni_momentum_rank) as moniMomentumRank,
                MAX(rh.volume_24h) as volume24h,
-               MAX(rh.txns_24h) as txns24h
+               MAX(rh.txns_24h) as txns24h,
+               MAX(rh.liquidity_usd) as liquidityUsd
              FROM raw_holdings rh
              INNER JOIN entities e ON e.id = rh.entity_id
              WHERE rh.token_key = ?
@@ -818,25 +954,60 @@ function createSqliteStorage(cwd: string): StorageAdapter {
               MAX(ch.chainId) as chainId,
               MAX(ch.tokenAddress) as tokenAddress,
               ROUND(SUM(ch.balanceUsd), 2) as holdingsUsd,
+              SUM(ch.tokenAmount) as tokenAmount,
               COUNT(*) as smwIn,
+              SUM(ch.isFavorite) as favoriteEntityCount,
+              ROUND(SUM(CASE WHEN ch.isFavorite = 1 THEN ch.balanceUsd ELSE 0 END), 2) as favoriteHoldingsUsd,
               MAX(ch.marketCap) as marketCap,
               MAX(ch.tokenAgeHours) as tokenAgeHours,
-              MAX(ch.moniScore) as moniScore,
-              MAX(ch.moniLevel) as moniLevel,
-              MAX(ch.moniLevelName) as moniLevelName,
-              MAX(ch.moniMomentumScorePct) as moniMomentumScorePct,
-              MAX(ch.moniMomentumRank) as moniMomentumRank,
               MAX(ch.volume24h) as volume24h,
-              MAX(ch.txns24h) as txns24h
+              MAX(ch.txns24h) as txns24h,
+              MAX(ch.liquidityUsd) as liquidityUsd
            FROM canonical_holdings ch
            INNER JOIN holding_snapshots hs ON hs.id = ch.snapshot_id
            WHERE ch.token_key = ?
              AND hs.status IN ('success', 'partial')
            GROUP BY hs.id, ch.token_key
-           ORDER BY datetime(COALESCE(hs.finished_at, hs.created_at)) ASC, hs.id ASC`,
+           ORDER BY datetime(COALESCE(hs.finished_at, hs.created_at)) ${historyOrder}, hs.id ${historyOrder}
+           ${historyLimitClause}`,
         )
-        .all(tokenKey, minBalanceUsd, tokenKey) as Array<Omit<TokenScorePoint, "score">>;
-      return rows.map(withOpportunityScore);
+        .all(...favoriteEntityKeys, tokenKey, minBalanceUsd, tokenKey, ...(queryLimit == null ? [] : [queryLimit])) as Array<Omit<TokenScorePoint, "score"> & { favoriteEntityCount?: number; favoriteHoldingsUsd?: number; liquidityUsd?: number | null }>;
+      if (queryLimit != null) rows.reverse();
+      const convictionBySnapshot = entityConvictionForTokenAtSnapshots(
+        [...new Set(rows.map((row) => row.snapshotId))],
+        tokenKey,
+        minBalanceUsd,
+      );
+      let previous: ScoreHistorySample | undefined;
+      let previousPrevious: ScoreHistorySample | undefined;
+      const scoredRows = rows.map((row) => {
+        const normalized = {
+          ...row,
+          favoriteEntityCount: Number(row.favoriteEntityCount || 0),
+          favoriteHoldingsUsd: Number(row.favoriteHoldingsUsd || 0),
+          liquidityUsd: row.liquidityUsd == null ? null : Number(row.liquidityUsd),
+          entityConviction: convictionBySnapshot.get(row.snapshotId) || 1,
+        };
+        const scored = withOpportunityScore(normalized, {
+          currentAt: row.snapshotFinishedAt || row.snapshotCreatedAt,
+          previous,
+          previousPrevious,
+          entityConviction: normalized.entityConviction,
+        });
+        if (row.snapshotStatus === "success") {
+          previousPrevious = previous;
+          previous = {
+            tokenAmount: Number(row.tokenAmount || 0),
+            holdingsUsd: Number(row.holdingsUsd || 0),
+            smwIn: Number(row.smwIn || 0),
+            favoriteEntityCount: normalized.favoriteEntityCount,
+            favoriteHoldingsUsd: normalized.favoriteHoldingsUsd,
+            at: row.snapshotFinishedAt || row.snapshotCreatedAt,
+          };
+        }
+        return scored;
+      });
+      return historyLimit == null ? scoredRows : scoredRows.slice(-historyLimit);
     },
 
     upsertBlacklist(input: {

@@ -22,10 +22,9 @@ export function resolveWorkspacePaths(cwd: string) {
     ? publicDashboardDir
     : sourceDashboardDir;
   const dbFile = path.join(dbDir, "dex-holding-overview.db");
-  const entitiesCsv =
-    process.env.TRADER_ENTITIES_CSV && process.env.TRADER_ENTITIES_CSV.trim() && !process.env.VERCEL
-      ? path.resolve(cwd, process.env.TRADER_ENTITIES_CSV)
-      : path.join(cwd, "data", "raw", "dex-entities-zapper.csv");
+  const cieloEntitiesCsv = process.env.CIELO_ENTITIES_CSV?.trim()
+    ? path.resolve(cwd, process.env.CIELO_ENTITIES_CSV)
+    : path.join(cwd, "data", "raw", "entity-cielo-portfolio-links.csv");
 
   ensureDirExists(rawDir);
   ensureDirExists(dbDir);
@@ -36,7 +35,7 @@ export function resolveWorkspacePaths(cwd: string) {
     rawDir,
     dbDir,
     dbFile,
-    entitiesCsv,
+    cieloEntitiesCsv,
     dashboardDir,
   };
 }

@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { waitUntil } from "@vercel/functions";
 import { runDexRefresh } from "./dex-refresh";
+import { getProviderLabel } from "./holdings-provider";
 import {
   RefreshJobState,
   RefreshLogEntry,
@@ -39,7 +40,7 @@ function cloneJob(job: RefreshJobSnapshot | null): PublicRefreshJobState | null 
     running: job.running,
     startedAt: job.startedAt,
     finishedAt: job.finishedAt,
-    apiKeyLabel: job.apiKeyLabel,
+    providerLabel: job.providerLabel,
     progress: { ...job.progress },
     logs: job.logs.map((entry) => ({ ...entry })),
     result: job.result ? { ...job.result } : null,
@@ -92,7 +93,7 @@ export function createRefreshJobManager(cwd: string) {
   };
 
   return {
-    async start(apiKey: string): Promise<PublicRefreshJobState> {
+    async start(): Promise<PublicRefreshJobState> {
       if (currentJob) {
         throw new Error("Refresh already running");
       }
@@ -102,7 +103,7 @@ export function createRefreshJobManager(cwd: string) {
         running: true,
         startedAt: new Date().toISOString(),
         finishedAt: null,
-        apiKeyLabel: `...${apiKey.trim().slice(-6)}`,
+        providerLabel: getProviderLabel(),
         progress: createInitialProgress(),
         logs: [],
         controller: new AbortController(),
@@ -112,7 +113,6 @@ export function createRefreshJobManager(cwd: string) {
 
       const refreshPromise = runDexRefresh({
         cwd,
-        apiKey,
         signal: currentJob.controller.signal,
         callbacks: {
           onLog: (tone, message) => appendLog(tone, message),

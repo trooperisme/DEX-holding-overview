@@ -6,7 +6,9 @@ const SESSION_COOKIE = "dex_dashboard_session";
 const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
 
 function getDashboardPassword(): string {
-  return process.env.DASHBOARD_PASSWORD?.trim() || DEFAULT_DASHBOARD_PASSWORD;
+  const configuredPassword = process.env.DASHBOARD_PASSWORD?.trim();
+  if (configuredPassword) return configuredPassword;
+  return process.env.NODE_ENV === "production" ? "" : DEFAULT_DASHBOARD_PASSWORD;
 }
 
 function getSessionSecret(): string {

@@ -3,20 +3,17 @@ import {
   type DexScreenerMarketData,
   toDexScreenerChainId,
 } from "./dexscreener";
-import { loadImportedEntities, maskApiKey, toTokenKey } from "./entities";
-import { fetchMoniScoreDataForToken, getMoniLookupTimeoutMs } from "./moni";
+import { loadTrackedEntities } from "./entities";
+import { getCieloProviderConfig, getProviderLabel } from "./holdings-provider";
 import { resolveWorkspacePaths } from "./runtime-paths";
 import { createStorage } from "./storage";
-import { fetchSolscanTopTokenBalances, SOLANA_CHAIN_ID } from "./solscan";
-import { fetchZapperTokenBalances } from "./zapper";
+import { runHoldingSnapshotEntities } from "./holding-snapshot-run";
+import { throwIfAborted } from "./refresh-support";
 import {
-  RawHoldingRecord,
-  RefreshJobState,
   RefreshLogTone,
   RefreshProgressState,
   RefreshResult,
   SnapshotStatus,
-  ZapperTokenBalance,
 } from "./types";
 
 type RefreshCallbacks = {
@@ -25,12 +22,7 @@ type RefreshCallbacks = {
 };
 
 function isAbortError(error: unknown): boolean {
-  return (
-    error !== null &&
-    typeof error === "object" &&
-    "name" in error &&
-    (error as { name?: string }).name === "AbortError"
-  );
+  return error !== null && typeof error === "object" && "name" in error && (error as { name?: string }).name === "AbortError";
 }
 
 function createProgressState(partial: Partial<RefreshProgressState> = {}): RefreshProgressState {
@@ -56,121 +48,15 @@ function emitProgress(callbacks: RefreshCallbacks, partial: Partial<RefreshProgr
   callbacks.onProgress?.(createProgressState(partial));
 }
 
-function getEntityConcurrency(totalEntities: number): number {
-  const configured = Number(process.env.DEX_REFRESH_CONCURRENCY || (process.env.VERCEL ? 6 : 3));
-  const concurrency = Number.isFinite(configured) ? Math.trunc(configured) : 1;
-  return Math.max(1, Math.min(totalEntities, concurrency));
-}
-
-function getMoniConcurrency(totalHandles: number): number {
-  const configured = Number(process.env.MONI_REFRESH_CONCURRENCY || 6);
-  const concurrency = Number.isFinite(configured) ? Math.trunc(configured) : 1;
-  return Math.max(1, Math.min(totalHandles, concurrency));
-}
-
-const SOLANA_WALLET_RE = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
-
-function isSolanaWalletAddress(address: string): boolean {
-  return !address.startsWith("0x") && SOLANA_WALLET_RE.test(address);
-}
-
-function addDecimalStrings(left: string, right: string): string {
-  const sum = Number(left || 0) + Number(right || 0);
-  return Number.isFinite(sum) ? String(sum) : left;
-}
-
-function aggregateTokenBalancesByKey(balances: ZapperTokenBalance[]): ZapperTokenBalance[] {
-  const byTokenKey = new Map<string, ZapperTokenBalance>();
-
-  for (const balance of balances) {
-    const key = toTokenKey(balance);
-    const existing = byTokenKey.get(key);
-    if (!existing) {
-      byTokenKey.set(key, { ...balance });
-      continue;
-    }
-
-    existing.balance = addDecimalStrings(existing.balance, balance.balance);
-    existing.balanceRaw = addDecimalStrings(existing.balanceRaw, balance.balanceRaw);
-    existing.balanceUsd += balance.balanceUsd;
-    existing.price ??= balance.price;
-    existing.marketCap ??= balance.marketCap;
-    existing.liquidityUsd ??= balance.liquidityUsd;
-    existing.volume24h ??= balance.volume24h;
-    existing.txns24h ??= balance.txns24h;
-    existing.tokenAgeHours ??= balance.tokenAgeHours;
-    existing.moniScore ??= balance.moniScore;
-    existing.moniLevel ??= balance.moniLevel;
-    existing.moniLevelName ??= balance.moniLevelName;
-    existing.moniMomentumScorePct ??= balance.moniMomentumScorePct;
-    existing.moniMomentumRank ??= balance.moniMomentumRank;
-  }
-
-  return Array.from(byTokenKey.values()).map((balance) => ({
-    ...balance,
-    balanceUsd: Math.round(balance.balanceUsd * 100) / 100,
-  }));
-}
-
-async function fetchSolscanEntityBalances(options: {
-  firecrawlApiKey: string;
-  walletAddresses: string[];
-  minBalanceUsd: number;
-  signal?: AbortSignal;
-}): Promise<{
-  balances: ZapperTokenBalance[];
-  walletsAttempted: number;
-  walletsSucceeded: number;
-  walletsFailed: number;
-  errors: string[];
-}> {
-  const balances: ZapperTokenBalance[] = [];
-  const errors: string[] = [];
-  let walletsSucceeded = 0;
-  let walletsFailed = 0;
-
-  for (const walletAddress of options.walletAddresses) {
-    if (options.signal?.aborted) {
-      throw new DOMException("Refresh canceled", "AbortError");
-    }
-
-    try {
-      const result = await fetchSolscanTopTokenBalances(options.firecrawlApiKey, walletAddress, {
-        minBalanceUsd: options.minBalanceUsd,
-        signal: options.signal,
-      });
-      balances.push(...result.balances);
-      walletsSucceeded += 1;
-    } catch (error) {
-      if (isAbortError(error)) throw error;
-      walletsFailed += 1;
-      errors.push(`${walletAddress}: ${error instanceof Error ? error.message : String(error)}`);
-    }
-  }
-
-  return {
-    balances: aggregateTokenBalancesByKey(balances),
-    walletsAttempted: options.walletAddresses.length,
-    walletsSucceeded,
-    walletsFailed,
-    errors,
-  };
-}
-
 async function enrichSnapshotMarketData(options: {
   storage: ReturnType<typeof createStorage>;
   snapshotId: number;
   totalEntities: number;
-  apiKey: string;
   signal?: AbortSignal;
   callbacks: RefreshCallbacks;
 }): Promise<{ attempted: number; enriched: number; failed: number }> {
   const snapshotTokens = (await options.storage.getSnapshotTokensForEnrichment(options.snapshotId, 111, 1))
-    .filter(
-      (token) =>
-        token.tokenAddress &&
-        toDexScreenerChainId(token.chainId, token.networkName),
-    )
+    .filter((token) => token.tokenAddress)
     .slice(0, options.totalEntities <= 1 ? 25 : undefined);
 
   if (!snapshotTokens.length) {
@@ -201,23 +87,17 @@ async function enrichSnapshotMarketData(options: {
 
   let enriched = 0;
   let failed = 0;
-  const moniCandidates: Array<{
-    tokenKey: string;
-    tokenSymbol: string;
-    tokenName: string;
-    twitterHandle: string;
-  }> = [];
-
+  let marketCapsFound = 0;
+  let tokenAgesFound = 0;
   for (const token of snapshotTokens) {
     if (options.signal?.aborted) {
       throw new DOMException("Refresh canceled", "AbortError");
     }
 
     const dexChainId = toDexScreenerChainId(token.chainId, token.networkName);
-    const marketData =
-      dexChainId && token.tokenAddress
-        ? marketDataByTokenAddress.get(`${dexChainId}:${token.tokenAddress.toLowerCase()}`)
-        : null;
+    const marketData = token.tokenAddress
+      ? marketDataByTokenAddress.get(`${dexChainId || "unknown"}:${token.tokenAddress.toLowerCase()}`)
+      : null;
 
     if (!marketData) {
       failed += 1;
@@ -226,31 +106,17 @@ async function enrichSnapshotMarketData(options: {
     }
 
     await options.storage.updateSnapshotTokenMarketData(options.snapshotId, token.tokenKey, marketData);
-    if (marketData.twitterHandle) {
-      moniCandidates.push({
-        tokenKey: token.tokenKey,
-        tokenSymbol: token.tokenSymbol,
-        tokenName: token.tokenName,
-        twitterHandle: marketData.twitterHandle,
-      });
-    }
     enriched += 1;
+    if (marketData.marketCap != null) marketCapsFound += 1;
+    if (marketData.tokenAgeHours != null) tokenAgesFound += 1;
   }
-
-  await enrichSnapshotMoniScores({
-    storage: options.storage,
-    snapshotId: options.snapshotId,
-    candidates: moniCandidates,
-    signal: options.signal,
-    callbacks: options.callbacks,
-  });
 
   emitLog(
     options.callbacks,
-    failed > 0 ? "warning" : "success",
+    failed > 0 || marketCapsFound < snapshotTokens.length || tokenAgesFound < snapshotTokens.length ? "warning" : "success",
     failed > 0
-      ? `DexScreener enrichment finished: ${enriched}/${snapshotTokens.length} enriched, ${failed} missing pair data.`
-      : `DexScreener enrichment finished: ${enriched}/${snapshotTokens.length} enriched.`,
+      ? `DexScreener enrichment finished: ${enriched}/${snapshotTokens.length} tokens with pair data, ${failed} missing pair data; market cap ${marketCapsFound}/${snapshotTokens.length}, token age ${tokenAgesFound}/${snapshotTokens.length}.`
+      : `DexScreener enrichment finished: ${enriched}/${snapshotTokens.length} tokens with pair data; market cap ${marketCapsFound}/${snapshotTokens.length}, token age ${tokenAgesFound}/${snapshotTokens.length}.`,
   );
 
   return {
@@ -260,133 +126,8 @@ async function enrichSnapshotMarketData(options: {
   };
 }
 
-async function enrichSnapshotMoniScores(options: {
-  storage: ReturnType<typeof createStorage>;
-  snapshotId: number;
-  candidates: Array<{
-    tokenKey: string;
-    tokenSymbol: string;
-    tokenName: string;
-    twitterHandle: string;
-  }>;
-  signal?: AbortSignal;
-  callbacks: RefreshCallbacks;
-}): Promise<void> {
-  const firecrawlApiKey = process.env.FIRECRAWL_API_KEY?.trim();
-  if (!options.candidates.length) {
-    emitLog(options.callbacks, "info", "No direct Twitter/X profile handles found for Moni Score lookup.");
-    return;
-  }
-  if (!firecrawlApiKey) {
-    emitLog(options.callbacks, "warning", "Moni Score lookup skipped: FIRECRAWL_API_KEY is not configured.");
-    return;
-  }
-
-  const byHandle = new Map<string, typeof options.candidates>();
-  for (const candidate of options.candidates) {
-    const key = candidate.twitterHandle.toLowerCase();
-    if (!byHandle.has(key)) byHandle.set(key, []);
-    byHandle.get(key)!.push(candidate);
-  }
-
-  const handleGroups = Array.from(byHandle.values());
-  const moniConcurrency = getMoniConcurrency(handleGroups.length);
-
-  emitLog(
-    options.callbacks,
-    "info",
-    `Enriching ${byHandle.size} Twitter/X handles with Moni Score data at concurrency ${moniConcurrency}.`,
-  );
-
-  let enriched = 0;
-  let reused = 0;
-  let failed = 0;
-  let nextHandleIndex = 0;
-
-  const reusePriorMoniScores = async (candidates: typeof handleGroups[number]): Promise<number> => {
-    let reusedForGroup = 0;
-    for (const candidate of candidates) {
-      const fallback = await options.storage.getLatestTokenMoniDataBeforeSnapshot(
-        options.snapshotId,
-        candidate.tokenKey,
-      );
-      if (fallback) {
-        await options.storage.updateSnapshotTokenMoniData(options.snapshotId, candidate.tokenKey, fallback);
-        reused += 1;
-        reusedForGroup += 1;
-      } else {
-        failed += 1;
-      }
-    }
-    return reusedForGroup;
-  };
-
-  const processHandleGroup = async (candidates: typeof handleGroups[number]): Promise<void> => {
-    if (options.signal?.aborted) {
-      throw new DOMException("Refresh canceled", "AbortError");
-    }
-
-    const handle = candidates[0].twitterHandle;
-    const tokenName = candidates[0].tokenName;
-    try {
-      const score = await fetchMoniScoreDataForToken(firecrawlApiKey, handle, tokenName, {
-        signal: options.signal,
-        tokenSymbol: candidates[0].tokenSymbol,
-        includeTokenFallbacks: true,
-        timeoutMs: getMoniLookupTimeoutMs(process.env.MONI_SCRAPE_TIMEOUT_MS),
-      });
-      if (!score) {
-        await reusePriorMoniScores(candidates);
-        return;
-      }
-
-      for (const candidate of candidates) {
-        await options.storage.updateSnapshotTokenMoniData(options.snapshotId, candidate.tokenKey, score);
-        enriched += 1;
-      }
-    } catch (error) {
-      if (isAbortError(error)) {
-        throw error;
-      }
-      const reusedForGroup = await reusePriorMoniScores(candidates);
-      if (reusedForGroup > 0) {
-        return;
-      }
-      const message = error instanceof Error ? error.message : String(error);
-      emitLog(
-        options.callbacks,
-        "warning",
-        `Moni Score lookup skipped for @${handle}: ${message}`,
-      );
-    }
-  };
-
-  const workers = Array.from({ length: moniConcurrency }, async () => {
-    while (true) {
-      if (options.signal?.aborted) {
-        throw new DOMException("Refresh canceled", "AbortError");
-      }
-      const index = nextHandleIndex;
-      nextHandleIndex += 1;
-      if (index >= handleGroups.length) return;
-      await processHandleGroup(handleGroups[index]);
-    }
-  });
-
-  await Promise.all(workers);
-
-  emitLog(
-    options.callbacks,
-    failed > 0 ? "warning" : "success",
-    failed > 0
-      ? `Moni Score enrichment finished: ${enriched}/${options.candidates.length} enriched, ${reused} reused from prior snapshots, ${failed} pending.`
-      : `Moni Score enrichment finished: ${enriched}/${options.candidates.length} enriched, ${reused} reused from prior snapshots.`,
-  );
-}
-
 export async function runDexRefresh(options: {
   cwd?: string;
-  apiKey: string;
   signal?: AbortSignal;
   callbacks?: RefreshCallbacks;
 }): Promise<RefreshResult> {
@@ -401,263 +142,75 @@ export async function runDexRefresh(options: {
   let entitiesFailed = 0;
   let totalRows = 0;
   let aborted = false;
-  let enrichmentFailed = 0;
   const failureReasons = new Map<string, number>();
   const firecrawlApiKey = process.env.FIRECRAWL_API_KEY?.trim();
-  const solscanMinBalanceUsd = Number(process.env.SOLSCAN_MIN_BALANCE_USD || 111);
-
-  const throwIfAborted = (): void => {
-    if (signal?.aborted) {
-      throw new DOMException("Refresh canceled", "AbortError");
-    }
-  };
 
   try {
-    throwIfAborted();
-    const imported = loadImportedEntities(paths.entitiesCsv);
-    emitLog(callbacks, "info", `Imported ${imported.length} tracked entities from CSV.`);
+    throwIfAborted(signal);
+    if (!firecrawlApiKey) {
+      throw new Error("FIRECRAWL_API_KEY is not configured for Cielo portfolio refreshes");
+    }
+
+    const imported = loadTrackedEntities(paths.cieloEntitiesCsv);
+    emitLog(callbacks, "info", `Using holdings provider ${getProviderLabel()}.`);
+    emitLog(callbacks, "info", `Imported ${imported.length} tracked entities from Cielo CSV.`);
     await storage.replaceEntities(imported);
 
-    const entities = await storage.getEntities();
-    snapshotId = await storage.createSnapshot(entities.length, maskApiKey(options.apiKey));
-    totalEntities = entities.length;
-    const progress = createProgressState({
-      snapshotId,
-      totalEntities: entities.length,
-      status: "running",
-    });
+    const sourceUrls = imported.map((entity) => entity.sourceUrl);
+    const entities = await storage.getEntitiesByLinks(sourceUrls);
+    if (entities.length !== imported.length) {
+      emitLog(callbacks, "warning", `Cielo entity selection found ${entities.length}/${imported.length} imported entities after storage sync.`);
+    }
 
-    emitProgress(callbacks, progress);
+    const providerLabel = getProviderLabel();
+    snapshotId = await storage.createSnapshot(entities.length, providerLabel);
+    totalEntities = entities.length;
+    emitProgress(callbacks, createProgressState({ snapshotId, totalEntities, status: "running" }));
     emitLog(callbacks, "info", `Created snapshot #${snapshotId} for ${entities.length} entities.`);
 
-    const refreshConcurrency = getEntityConcurrency(entities.length);
-    emitLog(callbacks, "info", `Fetching entities with concurrency ${refreshConcurrency}.`);
+    const cieloConfig = getCieloProviderConfig();
+    const refreshConcurrency = Math.max(1, Math.min(entities.length, cieloConfig.concurrency));
+    emitLog(
+      callbacks,
+      "info",
+      `Fetching entities with adaptive Cielo concurrency ${refreshConcurrency} (min ${cieloConfig.minConcurrency}, max ${cieloConfig.maxConcurrency}).`,
+    );
+    const holdingRun = await runHoldingSnapshotEntities({
+      storage,
+      snapshotId,
+      entities,
+      concurrency: refreshConcurrency,
+      firecrawlApiKey,
+      signal,
+      callbacks,
+      cieloAdaptiveConfig: {
+        initialConcurrency: refreshConcurrency,
+        minConcurrency: cieloConfig.minConcurrency,
+        maxConcurrency: Math.max(1, Math.min(entities.length, cieloConfig.maxConcurrency)),
+        successStreakToIncrease: cieloConfig.successStreakToIncrease,
+        entityRetryBaseDelayMs: cieloConfig.entityRetryBaseDelayMs,
+        entityRetryMaxDelayMs: cieloConfig.entityRetryMaxDelayMs,
+      },
+    });
+    entitiesCompleted = holdingRun.entitiesCompleted;
+    entitiesFailed = holdingRun.entitiesFailed;
+    totalRows = holdingRun.totalRows;
+    aborted = holdingRun.aborted;
+    for (const [message, count] of holdingRun.failureReasons) failureReasons.set(message, count);
 
-    let nextEntityIndex = 0;
-    const processEntity = async (index: number): Promise<void> => {
-      const entity = entities[index];
-      const entityLabel = entity.resolvedLabel || entity.entityName;
+    if (!aborted && entitiesCompleted > 0) {
       emitProgress(callbacks, {
         snapshotId,
-        totalEntities: entities.length,
+        totalEntities,
         entitiesCompleted,
         entitiesFailed,
         totalRows,
-        currentEntity: entityLabel,
-        currentEntityIndex: index + 1,
+        currentEntity: "Enriching market data",
+        currentEntityIndex: null,
         status: "running",
         errorMessage: null,
       });
-      emitLog(callbacks, "info", `Fetching ${entityLabel} (${index + 1}/${entities.length})...`);
-
-      const startedAt = new Date().toISOString();
-      const runId = await storage.insertEntityFetchRun({
-        snapshotId,
-        entityId: entity.id,
-        status: "running",
-        rowsFound: 0,
-        totalBalanceUsd: 0,
-        errorMessage: null,
-        startedAt,
-        finishedAt: null,
-      });
-
-      try {
-        const walletAddresses = entity.wallets.map((wallet) => wallet.walletAddress);
-        const solanaWalletAddresses = entity.wallets
-          .map((wallet) => wallet.walletAddress)
-          .filter(isSolanaWalletAddress);
-        const zapperWalletAddresses = firecrawlApiKey
-          ? walletAddresses.filter((walletAddress) => !isSolanaWalletAddress(walletAddress))
-          : walletAddresses;
-        const balances: ZapperTokenBalance[] = [];
-        let zapperError: unknown = null;
-
-        if (zapperWalletAddresses.length > 0) {
-          try {
-            const result = await fetchZapperTokenBalances(options.apiKey, zapperWalletAddresses, signal);
-            balances.push(...result.balances);
-          } catch (error) {
-            zapperError = error;
-          }
-        }
-
-        throwIfAborted();
-
-        if (firecrawlApiKey && solanaWalletAddresses.length > 0) {
-          const solscanResult = await fetchSolscanEntityBalances({
-            firecrawlApiKey,
-            walletAddresses: solanaWalletAddresses,
-            minBalanceUsd: solscanMinBalanceUsd,
-            signal,
-          });
-
-          if (solscanResult.walletsSucceeded > 0) {
-            balances.push(...solscanResult.balances);
-            emitLog(
-              callbacks,
-              solscanResult.walletsFailed > 0 ? "warning" : "info",
-              `Solscan override for ${entityLabel}: ${solscanResult.walletsSucceeded}/${solscanResult.walletsAttempted} Solana wallet(s), ${solscanResult.balances.length} token row(s).`,
-            );
-          } else if (solscanResult.walletsAttempted > 0) {
-            emitLog(
-              callbacks,
-              "warning",
-              `Solscan override skipped for ${entityLabel}: all ${solscanResult.walletsAttempted} Solana wallet scrape(s) failed; keeping Zapper Solana rows.`,
-            );
-          }
-
-          for (const error of solscanResult.errors.slice(0, 3)) {
-            emitLog(callbacks, "warning", `Solscan scrape issue for ${entityLabel}: ${error}`);
-          }
-        } else if (!firecrawlApiKey && solanaWalletAddresses.length > 0) {
-          emitLog(callbacks, "warning", `Solscan override skipped for ${entityLabel}: FIRECRAWL_API_KEY is not configured.`);
-        }
-
-        if (zapperError) {
-          const message = zapperError instanceof Error ? zapperError.message : String(zapperError);
-          if (!balances.length) {
-            throw new Error(message);
-          }
-          emitLog(
-            callbacks,
-            "warning",
-            `Zapper fetch failed for ${entityLabel}; keeping ${balances.length} Solscan token row(s): ${message}`,
-          );
-        }
-
-        const normalizedBalances = aggregateTokenBalancesByKey(balances);
-        const fetchedAt = new Date().toISOString();
-        const rows: RawHoldingRecord[] = normalizedBalances.map((holding) => ({
-          snapshotId,
-          entityId: entity.id,
-          tokenKey: toTokenKey(holding),
-          tokenSymbol: holding.tokenSymbol,
-          tokenName: holding.tokenName,
-          tokenAddress: holding.tokenAddress,
-          networkName: holding.networkName,
-          chainId: holding.chainId,
-          balance: holding.balance,
-          balanceRaw: holding.balanceRaw,
-          balanceUsd: holding.balanceUsd,
-          price: holding.price,
-          marketCap: holding.marketCap,
-          liquidityUsd: holding.liquidityUsd,
-          volume24h: holding.volume24h,
-          txns24h: holding.txns24h,
-          tokenAgeHours: holding.tokenAgeHours,
-          moniScore: holding.moniScore,
-          moniLevel: holding.moniLevel,
-          moniLevelName: holding.moniLevelName,
-          moniMomentumScorePct: holding.moniMomentumScorePct,
-          moniMomentumRank: holding.moniMomentumRank,
-          fetchedAt,
-        }));
-
-        await storage.insertRawHoldingsForEntity(snapshotId, entity.id, rows);
-        entitiesCompleted += 1;
-        totalRows += rows.length;
-        const totalBalanceUsd = rows.reduce((sum, row) => sum + row.balanceUsd, 0);
-        await storage.updateEntityFetchRun(runId, {
-          status: "success",
-          rowsFound: rows.length,
-          totalBalanceUsd,
-          errorMessage: null,
-          finishedAt: new Date().toISOString(),
-        });
-        await storage.updateSnapshot({
-          id: snapshotId,
-          entitiesCompleted,
-          entitiesFailed,
-          totalRows,
-        });
-        emitProgress(callbacks, {
-          snapshotId,
-          totalEntities: entities.length,
-          entitiesCompleted,
-          entitiesFailed,
-          totalRows,
-          currentEntity: entityLabel,
-          currentEntityIndex: index + 1,
-          status: "running",
-          errorMessage: null,
-        });
-        emitLog(
-          callbacks,
-          "success",
-          `Completed ${entityLabel}: ${rows.length} token rows, ${totalBalanceUsd.toLocaleString("en-US", {
-            style: "currency",
-            currency: "USD",
-            maximumFractionDigits: 2,
-          })} total.`,
-        );
-      } catch (error) {
-        if (isAbortError(error)) {
-          aborted = true;
-          await storage.updateEntityFetchRun(runId, {
-            status: "canceled",
-            rowsFound: 0,
-            totalBalanceUsd: 0,
-            errorMessage: "Refresh canceled by user",
-            finishedAt: new Date().toISOString(),
-          });
-          emitLog(callbacks, "warning", `Canceled while processing ${entityLabel}.`);
-          return;
-        }
-
-        entitiesFailed += 1;
-        const message = (error as Error).message;
-        failureReasons.set(message, (failureReasons.get(message) || 0) + 1);
-        await storage.updateEntityFetchRun(runId, {
-          status: "failed",
-          rowsFound: 0,
-          totalBalanceUsd: 0,
-          errorMessage: message,
-          finishedAt: new Date().toISOString(),
-        });
-        await storage.updateSnapshot({
-          id: snapshotId,
-          entitiesCompleted,
-          entitiesFailed,
-          totalRows,
-        });
-        emitProgress(callbacks, {
-          snapshotId,
-          totalEntities: entities.length,
-          entitiesCompleted,
-          entitiesFailed,
-          totalRows,
-          currentEntity: entityLabel,
-          currentEntityIndex: index + 1,
-          status: "running",
-          errorMessage: message,
-        });
-        emitLog(callbacks, "error", `Failed ${entityLabel}: ${message}`);
-      }
-    };
-
-    const workers = Array.from({ length: refreshConcurrency }, async () => {
-      while (!aborted) {
-        throwIfAborted();
-        const index = nextEntityIndex;
-        nextEntityIndex += 1;
-        if (index >= entities.length) return;
-        await processEntity(index);
-      }
-    });
-
-    await Promise.all(workers);
-
-    if (!aborted && entitiesCompleted > 0) {
-      const enrichment = await enrichSnapshotMarketData({
-        storage,
-        snapshotId,
-        totalEntities,
-        apiKey: options.apiKey,
-        signal,
-        callbacks,
-      });
-      enrichmentFailed = enrichment.failed;
+      await enrichSnapshotMarketData({ storage, snapshotId, totalEntities, signal, callbacks });
     }
 
     const status: SnapshotStatus = aborted
@@ -667,20 +220,12 @@ export async function runDexRefresh(options: {
         : entitiesFailed > 0
           ? "partial"
           : "success";
-
-    const dominantFailureMessage =
-      failureReasons.size > 0
-        ? Array.from(failureReasons.entries()).sort((left, right) => right[1] - left[1])[0][0]
-        : null;
-
-    const errorMessage =
-      status === "failed"
-        ? dominantFailureMessage
-          ? `All entity fetches failed: ${dominantFailureMessage}`
-          : "All entity fetches failed"
-        : status === "canceled"
-          ? "Refresh canceled by user"
-          : null;
+    const dominantFailureMessage = failureReasons.size
+      ? Array.from(failureReasons.entries()).sort((left, right) => right[1] - left[1])[0][0]
+      : null;
+    const errorMessage = status === "failed"
+      ? dominantFailureMessage ? `All entity fetches failed: ${dominantFailureMessage}` : "All entity fetches failed"
+      : status === "canceled" ? "Refresh canceled by user" : null;
 
     await storage.updateSnapshot({
       id: snapshotId,
@@ -691,10 +236,9 @@ export async function runDexRefresh(options: {
       entitiesFailed,
       totalRows,
     });
-
     emitProgress(callbacks, {
       snapshotId,
-      totalEntities: entities.length,
+      totalEntities,
       entitiesCompleted,
       entitiesFailed,
       totalRows,
@@ -703,39 +247,19 @@ export async function runDexRefresh(options: {
       status,
       errorMessage,
     });
-
     if (status === "success") {
       emitLog(callbacks, "success", `Refresh complete: ${entitiesCompleted}/${entities.length} entities, ${totalRows} rows.`);
     } else if (status === "partial") {
-      emitLog(
-        callbacks,
-        "warning",
-        `Refresh complete with partial failures: ${entitiesCompleted}/${entities.length} succeeded, ${entitiesFailed} failed.`,
-      );
+      emitLog(callbacks, "warning", `Refresh complete with partial failures: ${entitiesCompleted}/${entities.length} succeeded, ${entitiesFailed} failed.`);
     } else if (status === "canceled") {
       emitLog(callbacks, "warning", `Refresh canceled after ${entitiesCompleted} completed and ${entitiesFailed} failed.`);
     } else {
       emitLog(callbacks, "error", errorMessage || "All entity fetches failed.");
     }
-
-    if (enrichmentFailed > 0) {
-      emitLog(
-        callbacks,
-        "warning",
-        `${enrichmentFailed} market-data lookups were skipped. Liquidity filtering is best-effort for this snapshot.`,
-      );
-    }
-
-    return {
-      snapshotId,
-      totalEntities,
-      entitiesCompleted,
-      entitiesFailed,
-      totalRows,
-      status,
-    };
+    return { snapshotId, totalEntities, entitiesCompleted, entitiesFailed, totalRows, status };
   } catch (error) {
     if (isAbortError(error)) {
+      aborted = true;
       if (snapshotId > 0) {
         await storage.updateSnapshot({
           id: snapshotId,
@@ -758,14 +282,7 @@ export async function runDexRefresh(options: {
           errorMessage: "Refresh canceled by user",
         });
         emitLog(callbacks, "warning", "Refresh canceled by user.");
-        return {
-          snapshotId,
-          totalEntities,
-          entitiesCompleted,
-          entitiesFailed,
-          totalRows,
-          status: "canceled",
-        };
+        return { snapshotId, totalEntities, entitiesCompleted, entitiesFailed, totalRows, status: "canceled" };
       }
     }
     throw error;

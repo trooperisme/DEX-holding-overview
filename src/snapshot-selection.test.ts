@@ -7,7 +7,7 @@ function snapshot(input: Partial<SnapshotRecord> & Pick<SnapshotRecord, "id">): 
   return {
     id: input.id,
     status: input.status || "partial",
-    zapperKeyLabel: null,
+    providerLabel: null,
     totalEntities: 52,
     entitiesCompleted: 52,
     entitiesFailed: 0,

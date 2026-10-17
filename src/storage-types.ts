@@ -3,7 +3,6 @@ import {
   EntityRecord,
   EntityWalletRecord,
   ImportedEntity,
-  MoniScoreData,
   RawHoldingRecord,
   SnapshotRecord,
   SnapshotStatus,
@@ -40,7 +39,8 @@ export type StorageAdapter = {
   close(): StorageResult<void>;
   replaceEntities(entities: ImportedEntity[]): StorageResult<void>;
   getEntities(): StorageResult<Array<EntityRecord & { wallets: EntityWalletRecord[] }>>;
-  createSnapshot(totalEntities: number, zapperKeyLabel: string | null): StorageResult<number>;
+  getEntitiesByLinks(sourceUrls: string[]): StorageResult<Array<EntityRecord & { wallets: EntityWalletRecord[] }>>;
+  createSnapshot(totalEntities: number, providerLabel: string | null): StorageResult<number>;
   updateSnapshot(update: SnapshotUpdate): StorageResult<void>;
   insertEntityFetchRun(run: EntityFetchRunRecord): StorageResult<number>;
   updateEntityFetchRun(id: number, update: Partial<EntityFetchRunRecord>): StorageResult<void>;
@@ -52,14 +52,6 @@ export type StorageAdapter = {
     txns24h: number | null;
     tokenAgeHours: number | null;
   }): StorageResult<void>;
-  updateSnapshotTokenMoniData(snapshotId: number, tokenKey: string, moniData: {
-    moniScore: number | null;
-    moniLevel: number | null;
-    moniLevelName: string | null;
-    moniMomentumScorePct: number | null;
-    moniMomentumRank: number | null;
-  }): StorageResult<void>;
-  getLatestTokenMoniDataBeforeSnapshot(snapshotId: number, tokenKey: string): StorageResult<MoniScoreData | null>;
   getSnapshotSummaries(): StorageResult<SnapshotRecord[]>;
   getLatestSnapshot(): StorageResult<SnapshotRecord | null>;
   getSnapshotTokensForEnrichment(snapshotId: number, minBalanceUsd?: number, minSmwIn?: number): StorageResult<SnapshotTokenForEnrichment[]>;
@@ -69,9 +61,15 @@ export type StorageAdapter = {
     minSmwIn?: number,
     minLiquidityUsd?: number,
     maxMarketCapUsd?: number | null,
+    favoriteEntityNames?: string[],
   ): StorageResult<TokenOverviewRow[]>;
   getTokenHolders(snapshotId: number, tokenKey: string, minBalanceUsd?: number): StorageResult<TokenHolderRow[]>;
-  getTokenScoreHistory(tokenKey: string, minBalanceUsd?: number): StorageResult<TokenScorePoint[]>;
+  getTokenScoreHistory(
+    tokenKey: string,
+    minBalanceUsd?: number,
+    favoriteEntityNames?: string[],
+    limit?: number | null,
+  ): StorageResult<TokenScorePoint[]>;
   upsertBlacklist(input: {
     tokenKey: string;
     tokenSymbol: string;

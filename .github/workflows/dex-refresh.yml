@@ -1,0 +1,46 @@
+name: DEX holdings refresh
+
+on:
+  schedule:
+    - cron: "0 1 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: dex-holding-refresh
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      DATABASE_SCHEMA: dex
+      FIRECRAWL_API_KEY: ${{ secrets.FIRECRAWL_API_KEY }}
+      CIELO_ENTITIES_CSV: data/raw/entity-cielo-portfolio-links.csv
+      NODE_ENV: production
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify required secrets are present
+        shell: bash
+        run: |
+          test -n "$DATABASE_URL" || { echo "DATABASE_URL is missing"; exit 1; }
+          test -n "$FIRECRAWL_API_KEY" || { echo "FIRECRAWL_API_KEY is missing"; exit 1; }
+
+      - name: Build
+        run: npm run build
+
+      - name: Run scheduled refresh
+        run: npm run refresh:scheduled

@@ -6,10 +6,10 @@
     "build": "tsc -p tsconfig.json",
     "start": "node dist/src/server.js",
     "dev": "ts-node src/server.ts",
+    "refresh:scheduled": "node dist/src/scheduled-refresh.js",
     "test": "node --test -r ts-node/register src/*.test.ts",
-    "migrate:sqlite-to-postgres": "ts-node scripts/migrate-sqlite-to-postgres.ts",
-    "solscan:top-holdings": "ts-node scripts/solscan-top-holdings.ts",
-    "solscan:enrich-latest": "ts-node scripts/enrich-solscan-latest.ts"
+    "market-data:backfill": "ts-node scripts/backfill-market-data.ts",
+    "migrate:sqlite-to-postgres": "ts-node scripts/migrate-sqlite-to-postgres.ts"
   },
   "dependencies": {
     "@vercel/functions": "^3.4.3",

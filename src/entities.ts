@@ -47,61 +47,71 @@ function parseCsv(content: string): string[][] {
   return rows;
 }
 
-function parseZapperLink(fullZapperLink: string): {
-  resolvedLabel: string | null;
-  linkType: EntityLinkType;
-  walletAddresses: string[];
+export function parseCieloEntityCsv(content: string): {
+  entities: ImportedEntity[];
+  invalidRows: Array<{ rowNumber: number; entityName: string; link: string }>;
 } {
-  const parsed = new URL(fullZapperLink);
-  const segments = parsed.pathname.split("/").filter(Boolean);
-  const linkType = segments.includes("account") ? "account" : "bundle";
-  const lastSegment = segments[segments.length - 1] || "";
-  const walletAddresses = lastSegment
-    .split(",")
-    .map((value) => value.trim())
-    .filter(Boolean);
-  const label = parsed.searchParams.get("label");
-
-  return {
-    resolvedLabel: label ? decodeURIComponent(label).trim() : null,
-    linkType,
-    walletAddresses,
-  };
-}
-
-export function loadImportedEntities(csvPath: string): ImportedEntity[] {
-  if (!fs.existsSync(csvPath)) {
-    throw new Error(`Entities CSV not found at ${csvPath}`);
-  }
-
-  const content = fs.readFileSync(csvPath, "utf8");
   const rows = parseCsv(content);
   const [header, ...dataRows] = rows;
-
-  if (!header || header.length < 2) {
-    throw new Error("Entities CSV is missing the expected header");
+  const normalizedHeader = header?.map((value) => value.trim().toLowerCase());
+  if (!normalizedHeader || normalizedHeader.length < 2) {
+    throw new Error("Cielo entities CSV is missing the expected header: entity,cielo_link");
   }
 
-  return dataRows
-    .map((columns) => {
-      const entityName = String(columns[0] || "").trim();
-      const fullZapperLink = String(columns[1] || "").trim();
-      if (!entityName || !fullZapperLink) return null;
-      const parsed = parseZapperLink(fullZapperLink);
-      return {
+  const entityIndex = normalizedHeader.indexOf("entity");
+  const linkIndex = normalizedHeader.indexOf("cielo_link");
+  if (entityIndex < 0 || linkIndex < 0) {
+    throw new Error("Cielo entities CSV must contain entity,cielo_link headers");
+  }
+
+  const entities: ImportedEntity[] = [];
+  const invalidRows: Array<{ rowNumber: number; entityName: string; link: string }> = [];
+  const occurrencesByBundleId = new Map<string, number>();
+  for (const [index, columns] of dataRows.entries()) {
+    const entityName = String(columns[entityIndex] || "").trim();
+    const link = String(columns[linkIndex] || "").trim();
+    if (!entityName && !link) continue;
+
+    try {
+      const parsed = new URL(link);
+      const match = parsed.pathname.match(/^\/bundles\/(\d+)\/portfolio\/?$/);
+      if (parsed.hostname !== "app.cielo.finance" || !match) throw new Error("invalid Cielo portfolio URL");
+      const bundleId = match[1];
+      const occurrence = occurrencesByBundleId.get(bundleId) || 0;
+      occurrencesByBundleId.set(bundleId, occurrence + 1);
+      const sourceUrl = new URL(link);
+      if (occurrence > 0) sourceUrl.hash = `entity-row=${index + 2}`;
+      entities.push({
         entityName,
-        fullZapperLink,
-        resolvedLabel: parsed.resolvedLabel,
-        linkType: parsed.linkType,
-        walletAddresses: parsed.walletAddresses,
-      };
-    })
-    .filter((value): value is ImportedEntity => Boolean(value));
+        sourceUrl: sourceUrl.toString(),
+        resolvedLabel: entityName || null,
+        linkType: "bundle",
+        walletAddresses: [],
+      });
+    } catch {
+      invalidRows.push({ rowNumber: index + 2, entityName, link });
+    }
+  }
+
+  return { entities, invalidRows };
 }
 
-export function maskApiKey(apiKey: string): string {
-  const trimmed = apiKey.trim();
-  return trimmed.length <= 6 ? trimmed : `...${trimmed.slice(-6)}`;
+export function loadTrackedEntities(csvPath: string): ImportedEntity[] {
+  if (!fs.existsSync(csvPath)) {
+    throw new Error(`Cielo entities CSV not found at ${csvPath}`);
+  }
+  const parsed = parseCieloEntityCsv(fs.readFileSync(csvPath, "utf8"));
+  if (parsed.invalidRows.length) {
+    const details = parsed.invalidRows
+      .slice(0, 3)
+      .map((row) => `row ${row.rowNumber} (${row.entityName || "unnamed"})`)
+      .join(", ");
+    throw new Error(`Cielo entities CSV contains invalid portfolio URL(s): ${details}`);
+  }
+  if (!parsed.entities.length) {
+    throw new Error("Cielo entities CSV contains no valid entities");
+  }
+  return parsed.entities;
 }
 
 export function toTokenKey(input: {

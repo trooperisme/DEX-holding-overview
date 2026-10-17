@@ -7,7 +7,7 @@ import { resolveWorkspacePaths } from "./runtime-paths";
 import { createStorage } from "./storage";
 import { RawHoldingRecord } from "./types";
 
-function rawHolding(snapshotId: number, entityId: number, moniScore: number | null): RawHoldingRecord {
+function rawHolding(snapshotId: number, entityId: number): RawHoldingRecord {
   return {
     snapshotId,
     entityId,
@@ -26,11 +26,6 @@ function rawHolding(snapshotId: number, entityId: number, moniScore: number | nu
     volume24h: null,
     txns24h: null,
     tokenAgeHours: null,
-    moniScore,
-    moniLevel: moniScore == null ? null : 5,
-    moniLevelName: moniScore == null ? null : "Medium",
-    moniMomentumScorePct: moniScore == null ? null : 0,
-    moniMomentumRank: moniScore == null ? null : 1467,
     fetchedAt: new Date().toISOString(),
   };
 }
@@ -54,99 +49,10 @@ function tokenHolding(snapshotId: number, entityId: number, input: Partial<RawHo
     volume24h: 5000,
     txns24h: 25,
     tokenAgeHours: 1000,
-    moniScore: null,
-    moniLevel: null,
-    moniLevelName: null,
-    moniMomentumScorePct: null,
-    moniMomentumRank: null,
     fetchedAt: new Date().toISOString(),
     ...input,
   };
 }
-
-test("getLatestTokenMoniDataBeforeSnapshot returns the prior known Moni score", async () => {
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "dex-storage-test-"));
-  const previousDatabaseUrl = process.env.DATABASE_URL;
-  delete process.env.DATABASE_URL;
-
-  const storage = createStorage(cwd);
-  try {
-    await storage.replaceEntities([
-      {
-        entityName: "tester",
-        fullZapperLink: "https://zapper.xyz/bundle/0xabc?label=tester",
-        resolvedLabel: "tester",
-        linkType: "bundle",
-        walletAddresses: ["0xabc"],
-      },
-    ]);
-    const [entity] = await storage.getEntities();
-
-    const snapshot1 = await storage.createSnapshot(1, null);
-    await storage.insertRawHoldingsForEntity(snapshot1, entity.id, [rawHolding(snapshot1, entity.id, 4102)]);
-
-    const snapshot2 = await storage.createSnapshot(1, null);
-    await storage.insertRawHoldingsForEntity(snapshot2, entity.id, [rawHolding(snapshot2, entity.id, null)]);
-
-    const fallback = await storage.getLatestTokenMoniDataBeforeSnapshot(snapshot2, "8453:0xnoctest");
-    assert.deepEqual(fallback, {
-      moniScore: 4102,
-      moniLevel: 5,
-      moniLevelName: "Medium",
-      moniMomentumScorePct: 0,
-      moniMomentumRank: 1467,
-    });
-  } finally {
-    await storage.close();
-    if (previousDatabaseUrl == null) {
-      delete process.env.DATABASE_URL;
-    } else {
-      process.env.DATABASE_URL = previousDatabaseUrl;
-    }
-    fs.rmSync(cwd, { recursive: true, force: true });
-  }
-});
-
-test("getOverview reuses the latest prior Moni score when the current snapshot is missing it", async () => {
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "dex-storage-test-"));
-  const previousDatabaseUrl = process.env.DATABASE_URL;
-  delete process.env.DATABASE_URL;
-
-  const storage = createStorage(cwd);
-  try {
-    await storage.replaceEntities([
-      {
-        entityName: "tester",
-        fullZapperLink: "https://zapper.xyz/bundle/0xabc?label=tester",
-        resolvedLabel: "tester",
-        linkType: "bundle",
-        walletAddresses: ["0xabc"],
-      },
-    ]);
-    const [entity] = await storage.getEntities();
-
-    const snapshot1 = await storage.createSnapshot(1, null);
-    await storage.insertRawHoldingsForEntity(snapshot1, entity.id, [rawHolding(snapshot1, entity.id, 4102)]);
-
-    const snapshot2 = await storage.createSnapshot(1, null);
-    await storage.insertRawHoldingsForEntity(snapshot2, entity.id, [rawHolding(snapshot2, entity.id, null)]);
-
-    const [overview] = await storage.getOverview(snapshot2, 111, 1, 11111, null);
-    assert.equal(overview?.moniScore, 4102);
-    assert.equal(overview?.moniLevel, 5);
-    assert.equal(overview?.moniLevelName, "Medium");
-    assert.equal(overview?.moniMomentumScorePct, 0);
-    assert.equal(overview?.moniMomentumRank, 1467);
-  } finally {
-    await storage.close();
-    if (previousDatabaseUrl == null) {
-      delete process.env.DATABASE_URL;
-    } else {
-      process.env.DATABASE_URL = previousDatabaseUrl;
-    }
-    fs.rmSync(cwd, { recursive: true, force: true });
-  }
-});
 
 test("token aggregations collapse duplicate database rows for the same logical entity", async () => {
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "dex-storage-test-"));
@@ -160,15 +66,15 @@ test("token aggregations collapse duplicate database rows for the same logical e
   const db = new Database(resolveWorkspacePaths(cwd).dbFile);
   const now = new Date().toISOString();
   const insertEntity = db.prepare(`
-    INSERT INTO entities (entity_name, full_zapper_link, resolved_label, link_type, created_at, updated_at)
+    INSERT INTO entities (entity_name, source_url, resolved_label, link_type, created_at, updated_at)
     VALUES (?, ?, ?, 'bundle', ?, ?)
   `);
   const firstId = Number(
-    insertEntity.run("JoshuaDeuk", "https://zapper.xyz/bundle/0xfirst?label=JoshuaDeuk", "JoshuaDeuk", now, now)
+    insertEntity.run("JoshuaDeuk", "https://app.cielo.finance/bundles/0xfirst?label=JoshuaDeuk", "JoshuaDeuk", now, now)
       .lastInsertRowid,
   );
   const duplicateId = Number(
-    insertEntity.run("JoshuaDeuk", "https://zapper.xyz/bundle/0xduplicate?label=JoshuaDeuk", "JoshuaDeuk", now, now)
+    insertEntity.run("JoshuaDeuk", "https://app.cielo.finance/bundles/0xduplicate?label=JoshuaDeuk", "JoshuaDeuk", now, now)
       .lastInsertRowid,
   );
   db.close();
@@ -200,6 +106,35 @@ test("token aggregations collapse duplicate database rows for the same logical e
     const [history] = await storage.getTokenScoreHistory("1:0xfaba6f8e4a5e8ab82f62fe7c39859fa577269be3", 111);
     assert.equal(history?.smwIn, 1);
     assert.equal(history?.holdingsUsd, 160980.31);
+    assert.equal(history?.tokenAmount, 1000);
+
+    const nextSnapshot = await storage.createSnapshot(1, null);
+    await storage.insertRawHoldingsForEntity(nextSnapshot, firstId, [
+      tokenHolding(nextSnapshot, firstId, { balance: "1500", balanceUsd: 160980.3054685639 }),
+    ]);
+    await storage.updateSnapshotTokenMarketData(nextSnapshot, "1:0xfaba6f8e4a5e8ab82f62fe7c39859fa577269be3", {
+      marketCap: null,
+      liquidityUsd: null,
+      volume24h: null,
+      txns24h: null,
+      tokenAgeHours: null,
+    });
+    await storage.updateSnapshot({
+      id: nextSnapshot,
+      status: "success",
+      totalRows: 1,
+      entitiesCompleted: 1,
+      entitiesFailed: 0,
+      finishedAt: new Date().toISOString(),
+    });
+
+    const historyPoints = await storage.getTokenScoreHistory("1:0xfaba6f8e4a5e8ab82f62fe7c39859fa577269be3", 111);
+    assert.deepEqual(historyPoints.map((point) => point.tokenAmount), [1000, 1500]);
+    assert.equal(historyPoints[0].holdingsUsd, historyPoints[1].holdingsUsd);
+    const limitedHistory = await storage.getTokenScoreHistory("1:0xfaba6f8e4a5e8ab82f62fe7c39859fa577269be3", 111, [], 1);
+    assert.deepEqual(limitedHistory.map((point) => point.tokenAmount), [1500]);
+    const [latestOverview] = await storage.getOverview(nextSnapshot, 111, 1, 11111, null);
+    assert.equal(latestOverview?.marketCap, 1730000000);
 
     const [enrichmentToken] = await storage.getSnapshotTokensForEnrichment(snapshot, 111, 1);
     assert.equal(enrichmentToken?.smwIn, 1);
@@ -225,7 +160,7 @@ test("insertRawHoldingsForEntity normalizes Solana token names before storage", 
     await storage.replaceEntities([
       {
         entityName: "solana-tester",
-        fullZapperLink: "https://zapper.xyz/account/8eebNyWyrqBGbNwhwWM7yAoFxgUrgpg4UNGS4A33RQ6g",
+        sourceUrl: "https://app.cielo.finance/bundles/8eebNyWyrqBGbNwhwWM7yAoFxgUrgpg4UNGS4A33RQ6g",
         resolvedLabel: "solana-tester",
         linkType: "account",
         walletAddresses: ["8eebNyWyrqBGbNwhwWM7yAoFxgUrgpg4UNGS4A33RQ6g"],
@@ -269,7 +204,7 @@ test("getSnapshotSummaries includes Solana and non-Solana row coverage", async (
     await storage.replaceEntities([
       {
         entityName: "coverage-tester",
-        fullZapperLink: "https://zapper.xyz/bundle/0xabc,So11111111111111111111111111111111111111112?label=coverage",
+        sourceUrl: "https://app.cielo.finance/bundles/0xabc,So11111111111111111111111111111111111111112?label=coverage",
         resolvedLabel: "coverage-tester",
         linkType: "bundle",
         walletAddresses: ["0xabc", "So11111111111111111111111111111111111111112"],
@@ -306,7 +241,7 @@ test("getSnapshotSummaries includes Solana and non-Solana row coverage", async (
   }
 });
 
-test("replaceEntities updates an existing named entity when its Zapper bundle link changes", async () => {
+test("replaceEntities updates an existing named entity when its source link changes", async () => {
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "dex-storage-test-"));
   const previousDatabaseUrl = process.env.DATABASE_URL;
   delete process.env.DATABASE_URL;
@@ -316,7 +251,7 @@ test("replaceEntities updates an existing named entity when its Zapper bundle li
     await storage.replaceEntities([
       {
         entityName: "0xUnihaxor",
-        fullZapperLink: "https://zapper.xyz/bundle/0xold?label=0xunihaxor",
+        sourceUrl: "https://app.cielo.finance/bundles/0xold?label=0xunihaxor",
         resolvedLabel: "0xunihaxor",
         linkType: "bundle",
         walletAddresses: ["0xold"],
@@ -325,7 +260,7 @@ test("replaceEntities updates an existing named entity when its Zapper bundle li
     await storage.replaceEntities([
       {
         entityName: "0xUnihaxor",
-        fullZapperLink: "https://zapper.xyz/bundle/0xnew,So11111111111111111111111111111111111111112?label=0xunihaxor",
+        sourceUrl: "https://app.cielo.finance/bundles/0xnew,So11111111111111111111111111111111111111112?label=0xunihaxor",
         resolvedLabel: "0xunihaxor",
         linkType: "bundle",
         walletAddresses: ["0xnew", "So11111111111111111111111111111111111111112"],
@@ -335,7 +270,7 @@ test("replaceEntities updates an existing named entity when its Zapper bundle li
     const entities = await storage.getEntities();
     const matches = entities.filter((entity) => entity.entityName === "0xUnihaxor");
     assert.equal(matches.length, 1);
-    assert.equal(matches[0].fullZapperLink.includes("0xnew"), true);
+    assert.equal(matches[0].sourceUrl.includes("0xnew"), true);
     assert.deepEqual(
       matches[0].wallets.map((wallet) => wallet.walletAddress),
       ["0xnew", "So11111111111111111111111111111111111111112"],
@@ -381,15 +316,15 @@ test("replaceEntities normalizes stale duplicate entity wallet lists", async () 
   const db = new Database(resolveWorkspacePaths(cwd).dbFile);
   const now = new Date().toISOString();
   const insertEntity = db.prepare(`
-    INSERT INTO entities (entity_name, full_zapper_link, resolved_label, link_type, created_at, updated_at)
+    INSERT INTO entities (entity_name, source_url, resolved_label, link_type, created_at, updated_at)
     VALUES (?, ?, ?, 'bundle', ?, ?)
   `);
   const insertWallet = db.prepare(`
     INSERT INTO entity_wallets (entity_id, wallet_address, wallet_index, created_at)
     VALUES (?, ?, ?, ?)
   `);
-  const staleId = Number(insertEntity.run("0xUnihaxor", "https://zapper.xyz/bundle/0xold?label=0xunihaxor", "0xunihaxor", now, now).lastInsertRowid);
-  const oversizeId = Number(insertEntity.run("0xUnihaxor", "https://zapper.xyz/bundle/0xoversize?label=0xunihaxor", "0xunihaxor", now, now).lastInsertRowid);
+  const staleId = Number(insertEntity.run("0xUnihaxor", "https://app.cielo.finance/bundles/0xold?label=0xunihaxor", "0xunihaxor", now, now).lastInsertRowid);
+  const oversizeId = Number(insertEntity.run("0xUnihaxor", "https://app.cielo.finance/bundles/0xoversize?label=0xunihaxor", "0xunihaxor", now, now).lastInsertRowid);
   for (let index = 0; index < 22; index += 1) {
     insertWallet.run(oversizeId, `stale-wallet-${index}`, index, now);
   }
@@ -401,7 +336,7 @@ test("replaceEntities normalizes stale duplicate entity wallet lists", async () 
     await storage.replaceEntities([
       {
         entityName: "0xUnihaxor",
-        fullZapperLink: `https://zapper.xyz/bundle/${currentWallets.join(",")}?label=0xunihaxor`,
+        sourceUrl: `https://app.cielo.finance/bundles/${currentWallets.join(",")}?label=0xunihaxor`,
         resolvedLabel: "0xunihaxor",
         linkType: "bundle",
         walletAddresses: currentWallets,
