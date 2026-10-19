@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>DEX Holding Overview</title>
-    <link rel="stylesheet" href="/dashboard/styles.css?v=20260625-token-name-fix-2" />
+    <link rel="stylesheet" href="/dashboard/styles.css?v=20260921-favorites-layout-1" />
   </head>
   <body>
     <main class="app-shell">
@@ -13,33 +13,33 @@
           <p class="eyebrow">DEX Smart Money</p>
           <h1>Holding Overview</h1>
           <p class="hero-meta" id="hero-meta">
-            Token overlap dashboard for your tracked Zapper entity clusters.
+            Token holdings across your tracked Cielo portfolios.
           </p>
         </div>
 
         <div class="hero-actions">
-          <a class="action-button" href="/dashboard/solscan-test.html">Solscan Test</a>
-          <a class="action-button" href="/dashboard/blacklist.html">Blacklist</a>
-          <button class="action-button action-button--primary" id="refresh-button" type="button">
-            Run Analysis
-          </button>
-          <button class="action-button action-button--secondary" id="cancel-button" type="button" hidden>
-            Cancel Run
-          </button>
+          <div class="favorite-entity-manager">
+            <label class="field-label" for="favorite-entity-input">Favorite Entities</label>
+            <div class="favorite-entity-entry">
+              <input id="favorite-entity-input" type="text" autocomplete="off" placeholder="Add entity by name" />
+              <button class="favorite-entity-add" id="add-favorite-entity-button" type="button" aria-label="Add favorite entity">★</button>
+            </div>
+            <div class="favorite-entity-list" id="favorite-entity-list" aria-live="polite"></div>
+            <p class="favorite-entity-help">Favorites boost the score of tokens they hold.</p>
+          </div>
+          <div class="hero-action-stack">
+            <button class="action-button action-button--primary" id="refresh-button" type="button">
+              Run Analysis
+            </button>
+            <a class="action-button action-button--blacklist" href="/dashboard/blacklist.html">Blacklist</a>
+            <button class="action-button action-button--secondary" id="cancel-button" type="button" hidden>
+              Cancel Run
+            </button>
+          </div>
         </div>
       </section>
 
       <section class="control-panel">
-        <div class="control-block control-block--wide">
-          <label class="field-label" for="api-key-input">Zapper API Key</label>
-          <input
-            id="api-key-input"
-            type="text"
-            autocomplete="off"
-            spellcheck="false"
-            placeholder="Paste the Zapper API key for this run"
-          />
-        </div>
         <div class="control-block">
           <label class="field-label" for="snapshot-select">Snapshot</label>
           <select id="snapshot-select"></select>
@@ -97,7 +97,7 @@
             <div>
               <h2>DEX Holding Overview</h2>
               <p id="table-subtitle">
-                Tokens held by tracked entities across Zapper EVM clusters and the latest Solscan Solana epoch.
+                Tokens held by entities in tracked Cielo portfolios.
               </p>
             </div>
             <div class="table-status" id="table-status">0 rows</div>
@@ -130,7 +130,6 @@
                       <span class="sort-indicator" aria-hidden="true">-</span>
                     </button>
                   </th>
-                  <th>Moni Score</th>
                   <th>
                     <button class="sort-button" type="button" data-sort-key="holdingsUsd">
                       <span>Holdings</span>
@@ -154,6 +153,6 @@
     </main>
 
     <div id="chart-tooltip" class="chart-tooltip" hidden></div>
-    <script src="/dashboard/main.js?v=20260703-sort-marketcap-tokenage" defer></script>
+    <script src="/dashboard/main.js?v=20261017-auth-redirect-1" defer></script>
   </body>
 </html>

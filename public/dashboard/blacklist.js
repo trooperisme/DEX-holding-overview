@@ -36,8 +36,19 @@ async function fetchJson(url, options) {
     }
     throw error;
   }
+  const redirectedToLogin = response.redirected && new URL(response.url, window.location.href).pathname.startsWith("/login");
+  if (redirectedToLogin) {
+    const nextPath = `${window.location.pathname}${window.location.search}`;
+    window.location.assign(`/login?next=${encodeURIComponent(nextPath)}`);
+    throw new Error("Authentication required");
+  }
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
+    if (response.status === 401) {
+      const nextPath = `${window.location.pathname}${window.location.search}`;
+      window.location.assign(`/login?next=${encodeURIComponent(nextPath)}`);
+      throw new Error("Authentication required");
+    }
     throw new Error(payload.error || `${response.status} ${response.statusText}`);
   }
   return payload;

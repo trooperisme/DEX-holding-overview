@@ -1,5 +1,8 @@
 const els = {
   heroMeta: document.getElementById("hero-meta"),
+  favoriteEntityInput: document.getElementById("favorite-entity-input"),
+  addFavoriteEntityButton: document.getElementById("add-favorite-entity-button"),
+  favoriteEntityList: document.getElementById("favorite-entity-list"),
   refreshButton: document.getElementById("refresh-button"),
   cancelButton: document.getElementById("cancel-button"),
   snapshotSelect: document.getElementById("snapshot-select"),
@@ -8,7 +11,6 @@ const els = {
   maxMarketCapInput: document.getElementById("max-market-cap-input"),
   applyMarketCapButton: document.getElementById("apply-market-cap-button"),
   resetMarketCapButton: document.getElementById("reset-market-cap-button"),
-  apiKeyInput: document.getElementById("api-key-input"),
   summaryStatus: document.getElementById("summary-status"),
   summaryEntities: document.getElementById("summary-entities"),
   summaryRows: document.getElementById("summary-rows"),
@@ -34,15 +36,21 @@ const state = {
   activeDrilldownTab: "holders",
   holders: new Map(),
   scoreHistory: new Map(),
+  scoreHistoryLimits: new Map(),
   holderErrors: new Map(),
   scoreHistoryErrors: new Map(),
   loadingHolders: new Set(),
   loadingScoreHistory: new Set(),
+  pendingBlacklistKeys: new Set(),
+  overviewRequestId: 0,
+  overviewAbortController: null,
+  overviewAction: null,
   trendWindow: 10,
   trendScale: "log",
   sortKey: "score",
   sortDir: "desc",
   maxMarketCapUsd: null,
+  favoriteEntities: [],
   refreshJob: null,
   refreshPollTimer: null,
 };
@@ -54,6 +62,44 @@ function escapeHtml(value) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
+}
+
+function renderFavoriteEntities() {
+  els.favoriteEntityList.innerHTML = state.favoriteEntities.length
+    ? state.favoriteEntities.map((name) => `
+        <span class="favorite-entity-chip">
+          <span title="${escapeHtml(name)}">${escapeHtml(name)}</span>
+          <button type="button" data-remove-favorite="${escapeHtml(name)}" aria-label="Remove ${escapeHtml(name)} from favorites">×</button>
+        </span>
+      `).join("")
+    : '<span class="favorite-entity-empty">No favorites yet</span>';
+}
+
+async function setFavoriteEntities(names) {
+  const unique = new Map();
+  for (const rawName of names) {
+    const name = String(rawName || "").trim();
+    if (name && !unique.has(name.toLowerCase())) unique.set(name.toLowerCase(), name);
+  }
+  state.favoriteEntities = [...unique.values()];
+  localStorage.setItem("dex.favoriteEntities", JSON.stringify(state.favoriteEntities));
+  const openTokenKey = state.openTokenKey;
+  state.scoreHistory.clear();
+  state.scoreHistoryLimits.clear();
+  state.scoreHistoryErrors.clear();
+  renderFavoriteEntities();
+  renderTable();
+  await loadOverview();
+  if (openTokenKey && state.activeDrilldownTab === "trend") {
+    void loadScoreHistory(openTokenKey);
+  }
+}
+
+async function addFavoriteEntityFromInput() {
+  const name = els.favoriteEntityInput.value.trim();
+  if (!name) return;
+  els.favoriteEntityInput.value = "";
+  await setFavoriteEntities([...state.favoriteEntities, name]);
 }
 
 function getDisplayTokenName(row) {
@@ -107,6 +153,12 @@ function fmtUsdOrDash(value) {
   return fmtUsd(numeric);
 }
 
+function fmtTokenAmount(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return "—";
+  return numeric.toLocaleString("en-US", { maximumSignificantDigits: 5 });
+}
+
 function fmtScore(value) {
   const numeric = Number(value || 0);
   if (!Number.isFinite(numeric) || numeric <= 0) return "—";
@@ -151,6 +203,7 @@ function clearOpenRows() {
   state.activeDrilldownTab = "holders";
   state.holders.clear();
   state.scoreHistory.clear();
+  state.scoreHistoryLimits.clear();
   state.holderErrors.clear();
   state.scoreHistoryErrors.clear();
 }
@@ -191,14 +244,6 @@ function fmtDeltaPct(value) {
   return `${sign}${numeric.toFixed(1)}%`;
 }
 
-function fmtMoniScoreValue(value) {
-  if (value == null) return null;
-  const numeric = Number(value);
-  if (!Number.isFinite(numeric)) return null;
-  if (numeric < 1000) return Math.round(numeric).toLocaleString("en-US");
-  return `${Math.round(numeric / 1000).toLocaleString("en-US")}k`;
-}
-
 function safeNumber(value, fallback = 0) {
   if (value == null || value === "") return fallback;
   const numeric = Number(value);
@@ -215,43 +260,6 @@ function smwBreadthMultiplier(smwInRaw) {
   if (smwIn <= 10) return 1.8;
   if (smwIn <= 20) return 2.05;
   return 2.3;
-}
-
-function moniSocialMultiplier(row) {
-  const level = safeNumber(row.moniLevel, NaN);
-  const momentumPct = safeNumber(row.moniMomentumScorePct, NaN);
-  const momentumRank = safeNumber(row.moniMomentumRank, NaN);
-
-  if (!Number.isFinite(level) && !Number.isFinite(momentumPct)) return 1.0;
-
-  let quality = 1.0;
-  if (Number.isFinite(level)) {
-    if (level <= 1) quality = 0.85;
-    else if (level === 2) quality = 0.95;
-    else if (level === 3) quality = 1.05;
-    else if (level === 4) quality = 1.15;
-    else if (level === 5) quality = 1.25;
-    else if (level === 6) quality = 1.4;
-    else if (level >= 7) quality = 1.55;
-  }
-
-  let momentum = 1.0;
-  if (Number.isFinite(momentumPct)) {
-    if (momentumPct <= 0) momentum = 1.0;
-    else if (momentumPct < 100) momentum = 1.1;
-    else if (momentumPct < 300) momentum = 1.25;
-    else if (momentumPct < 700) momentum = 1.4;
-    else momentum = 1.6;
-  }
-
-  if (Number.isFinite(momentumRank) && momentumRank > 0) {
-    if (momentumRank <= 100) momentum += 0.2;
-    else if (momentumRank <= 500) momentum += 0.15;
-    else if (momentumRank <= 1000) momentum += 0.1;
-    else if (momentumRank <= 5000) momentum += 0.05;
-  }
-
-  return Math.min(2.2, Math.max(0.75, quality * momentum));
 }
 
 function holdingsToMarketCapFootprintMultiplier(holdingsUsdRaw, marketCapRaw) {
@@ -296,8 +304,8 @@ function tokenAgeMultiplier(tokenAgeHoursRaw) {
 function scoreFactors(point) {
   return {
     holdingsUsd: safeNumber(point.holdingsUsd, 0),
+    tokenAmount: safeNumber(point.tokenAmount, 0),
     smwBreadth: smwBreadthMultiplier(point.smwIn),
-    moniSocial: moniSocialMultiplier(point),
     footprint: holdingsToMarketCapFootprintMultiplier(point.holdingsUsd, point.marketCap),
     asymmetry: marketCapAsymmetryMultiplier(point.marketCap),
     age: tokenAgeMultiplier(point.tokenAgeHours),
@@ -311,45 +319,17 @@ function factorRows(prev, current) {
   const rows = [
     {
       label: "Holdings",
-      before: fmtUsd(prev.holdingsUsd),
-      after: fmtUsd(current.holdingsUsd),
-      beforeValue: prevFactors.holdingsUsd,
-      afterValue: currFactors.holdingsUsd,
+      before: fmtTokenAmount(prev.tokenAmount),
+      after: fmtTokenAmount(current.tokenAmount),
+      beforeValue: prevFactors.tokenAmount,
+      afterValue: currFactors.tokenAmount,
     },
     {
-      label: "SMW breadth",
-      before: `${prev.smwIn ?? "—"} (${prevFactors.smwBreadth.toFixed(2)}x)`,
-      after: `${current.smwIn ?? "—"} (${currFactors.smwBreadth.toFixed(2)}x)`,
-      beforeValue: prevFactors.smwBreadth,
-      afterValue: currFactors.smwBreadth,
-    },
-    {
-      label: "Market cap footprint",
+      label: "Marketcap",
       before: `${fmtUsdOrDash(prev.marketCap)} (${prevFactors.footprint.toFixed(2)}x)`,
       after: `${fmtUsdOrDash(current.marketCap)} (${currFactors.footprint.toFixed(2)}x)`,
       beforeValue: prevFactors.footprint,
       afterValue: currFactors.footprint,
-    },
-    {
-      label: "Asymmetry",
-      before: `${fmtUsdOrDash(prev.marketCap)} (${prevFactors.asymmetry.toFixed(2)}x)`,
-      after: `${fmtUsdOrDash(current.marketCap)} (${currFactors.asymmetry.toFixed(2)}x)`,
-      beforeValue: prevFactors.asymmetry,
-      afterValue: currFactors.asymmetry,
-    },
-    {
-      label: "MONI",
-      before: prev.moniScore == null ? "Pending" : `${fmtMoniScoreValue(prev.moniScore)} · ${String(prev.moniLevelName || "—")}`,
-      after: current.moniScore == null ? "Pending" : `${fmtMoniScoreValue(current.moniScore)} · ${String(current.moniLevelName || "—")}`,
-      beforeValue: prevFactors.moniSocial,
-      afterValue: currFactors.moniSocial,
-    },
-    {
-      label: "Token age",
-      before: fmtTokenAge(prev.tokenAgeHours),
-      after: fmtTokenAge(current.tokenAgeHours),
-      beforeValue: prevFactors.age,
-      afterValue: currFactors.age,
     },
   ];
 
@@ -364,29 +344,6 @@ function factorRows(prev, current) {
       };
     })
     .sort((a, b) => Math.abs(b.deltaPct) - Math.abs(a.deltaPct));
-}
-
-function buildMoniScoreCell(row) {
-  const score = fmtMoniScoreValue(row.moniScore);
-  const level = Number(row.moniLevel);
-  const levelName = String(row.moniLevelName || "").trim();
-  if (!score || !Number.isFinite(level) || !levelName) {
-    return '<span class="moni-cell__pending">Pending</span>';
-  }
-
-  const momentumPct = Number(row.moniMomentumScorePct);
-  const momentumRank = Number(row.moniMomentumRank);
-  const momentumLine =
-    Number.isFinite(momentumPct) && Number.isFinite(momentumRank)
-      ? `🚀 ${momentumPct.toLocaleString("en-US", { maximumFractionDigits: 1 })}% · Top ${Math.round(momentumRank).toLocaleString("en-US")}`
-      : "No momentum";
-
-  return `
-    <div class="moni-cell">
-      <div>${escapeHtml(`${score} · ${levelName} ${Math.round(level)}/8`)}</div>
-      <span>${escapeHtml(momentumLine)}</span>
-    </div>
-  `;
 }
 
 function setBanner(message, tone = "warning") {
@@ -405,14 +362,26 @@ async function fetchJson(url, options) {
   try {
     response = await fetch(url, options);
   } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") throw error;
     const message = String(error instanceof Error ? error.message : error || "");
     if (/failed to fetch|networkerror|load failed|fetch failed/i.test(message)) {
       throw new Error("API doesn't respond, you might need to insert a new API.");
     }
     throw error;
   }
+  const redirectedToLogin = response.redirected && new URL(response.url, window.location.href).pathname.startsWith("/login");
+  if (redirectedToLogin) {
+    const nextPath = `${window.location.pathname}${window.location.search}`;
+    window.location.assign(`/login?next=${encodeURIComponent(nextPath)}`);
+    throw new Error("Authentication required");
+  }
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
+    if (response.status === 401) {
+      const nextPath = `${window.location.pathname}${window.location.search}`;
+      window.location.assign(`/login?next=${encodeURIComponent(nextPath)}`);
+      throw new Error("Authentication required");
+    }
     const message = payload.error || `${response.status} ${response.statusText}`;
     if (/fetch failed|network|timed out|timeout|doesn't respond|does not respond/i.test(message)) {
       throw new Error("API doesn't respond, you might need to insert a new API.");
@@ -420,6 +389,17 @@ async function fetchJson(url, options) {
     throw new Error(message);
   }
   return payload;
+}
+
+function setOverviewAction(action) {
+  state.overviewAction = action;
+  const loading = Boolean(action);
+  els.applyMarketCapButton.textContent = action === "filter" ? "Applying…" : "Filter Market Cap";
+  els.resetMarketCapButton.textContent = action === "reset" ? "Resetting…" : "Reset Market Cap";
+  for (const button of [els.applyMarketCapButton, els.resetMarketCapButton]) {
+    button.classList.toggle("is-loading", loading);
+    button.setAttribute("aria-busy", loading ? "true" : "false");
+  }
 }
 
 function getJobStatusTone(status) {
@@ -603,7 +583,7 @@ function updateSummary(snapshot) {
   els.summaryRows.textContent = `${Number(snapshot?.totalRows || 0)} holdings`;
 
   if (!snapshot) {
-    els.heroMeta.textContent = "No snapshot yet. Paste a Zapper key and run the first analysis.";
+    els.heroMeta.textContent = "No snapshot yet. Run your first portfolio analysis.";
     return;
   }
 
@@ -858,12 +838,16 @@ function buildHolderPanel(tokenKey) {
     <div class="holder-list">
       ${rows
         .map(
-          (row) => `
+          (row) => {
+            const isFavorite = state.favoriteEntities.some((name) => name.toLowerCase() === row.entityName.toLowerCase());
+            return `
             <div class="holder-list__row">
+              <button class="favorite-entity-button ${isFavorite ? "is-favorite" : ""}" type="button" data-favorite-entity="${escapeHtml(row.entityName)}" aria-label="${isFavorite ? "Remove" : "Add"} ${escapeHtml(row.entityName)} ${isFavorite ? "from" : "to"} favorites" aria-pressed="${isFavorite}">${isFavorite ? "★" : "☆"}</button>
               <span class="drilldown-entity">${escapeHtml(row.entityName)}</span>
               <span class="drilldown-balance">${escapeHtml(fmtUsd(row.balanceUsd))}</span>
             </div>
-          `,
+          `;
+          },
         )
         .join("")}
     </div>
@@ -878,7 +862,7 @@ function buildDrilldownRows(tokenKey) {
 
   return `
     <tr class="drilldown-row">
-      <td colspan="10">
+      <td colspan="9">
         <div class="drilldown-panel drilldown-detail">
           <div class="drilldown-detail__header">
             <div>
@@ -926,7 +910,7 @@ function renderTable() {
   if (!rows.length) {
     els.tableBody.innerHTML = `
         <tr>
-        <td colspan="10">
+        <td colspan="9">
           <div class="drilldown-panel">
             <div class="empty-note">No token rows match the current snapshot and filters.</div>
           </div>
@@ -965,22 +949,20 @@ function renderTable() {
               </div>
             </div>
           </td>
-          <td>
+          <td class="token-name-cell">
             <div class="token-cell">
-              <strong title="${escapeHtml(displayTokenName)}">${escapeHtml(displayTokenName)}</strong>
-              <span>Click to view score trend and entity holders</span>
+              <strong title="${escapeHtml(displayTokenName)}">${escapeHtml(displayTokenName)}${row.favoriteEntityCount > 0 ? ` <span class="favorite-entity-count" title="${row.favoriteEntityCount} starred holder${row.favoriteEntityCount === 1 ? "" : "s"}">⭐${row.favoriteEntityCount > 1 ? `×${row.favoriteEntityCount}` : ""}</span>` : ""}</strong>
             </div>
           </td>
           <td class="metric-cell">${buildMetricCell(row.score, scoreMax, fmtScore)}</td>
           <td>${escapeHtml(fmtUsdOrDash(row.marketCap))}</td>
           <td>${networkBadge || '<span class="chain-text">Unknown</span>'}</td>
           <td>${escapeHtml(fmtTokenAge(row.tokenAgeHours))}</td>
-          <td>${buildMoniScoreCell(row)}</td>
           <td class="metric-cell">${buildMetricCell(row.holdingsUsd, holdingsUsdMax, fmtUsd)}</td>
           <td class="metric-cell">${buildMetricCell(row.smwIn, smwInMax, String)}</td>
           <td>
-            <button class="danger-button" type="button" data-blacklist-key="${escapeHtml(row.tokenKey)}">
-              Blacklist
+            <button class="danger-button" type="button" data-blacklist-key="${escapeHtml(row.tokenKey)}" ${state.pendingBlacklistKeys.has(row.tokenKey) ? "disabled aria-busy=\"true\"" : ""}>
+              ${state.pendingBlacklistKeys.has(row.tokenKey) ? "Hiding…" : "Blacklist"}
             </button>
           </td>
         </tr>
@@ -1017,10 +999,23 @@ async function loadSnapshots() {
   updateSummary(state.snapshots.find((item) => item.id === state.selectedSnapshotId) || payload.latest || null);
 }
 
-async function loadOverview() {
+async function loadOverview(options = {}) {
+  const loadingLabel = options.loadingLabel || "Loading overview…";
+  const successMessage = options.successMessage || "";
+  const requestId = state.overviewRequestId + 1;
+  state.overviewRequestId = requestId;
+  state.overviewAbortController?.abort();
+  const controller = new AbortController();
+  state.overviewAbortController = controller;
+  els.tableStatus.textContent = loadingLabel;
+
   if (!state.selectedSnapshotId) {
     state.rows = [];
     renderTable();
+    if (state.overviewRequestId === requestId) {
+      state.overviewAbortController = null;
+      setOverviewAction(null);
+    }
     return;
   }
 
@@ -1032,17 +1027,32 @@ async function loadOverview() {
     minBalanceUsd: String(minBalanceUsd),
     minSmwIn: String(minSmwIn),
     minLiquidityUsd: String(minLiquidityUsd),
+    favoriteEntities: JSON.stringify(state.favoriteEntities),
   });
   if (state.maxMarketCapUsd) {
     params.set("maxMarketCapUsd", String(state.maxMarketCapUsd));
   }
-  const payload = await fetchJson(`/api/overview?${params.toString()}`);
-  state.rows = Array.isArray(payload.rows) ? payload.rows : [];
-  const marketCapConstraint = state.maxMarketCapUsd
-    ? `Market cap < ${fmtUsd(state.maxMarketCapUsd)}; unknown market cap included`
-    : "no market cap constraint";
-  els.tableSubtitle.textContent = `Snapshot #${state.selectedSnapshotId} filtered at ${fmtUsd(minBalanceUsd)} minimum entity balance, SMW In >= ${minSmwIn}, verified liquidity >= ${fmtUsd(minLiquidityUsd)}, 24h volume >= ${fmtUsd(1000)}, 24h txns >= 11 when available, and ${marketCapConstraint}.`;
-  renderTable();
+  try {
+    const payload = await fetchJson(`/api/overview?${params.toString()}`, { signal: controller.signal });
+    if (requestId !== state.overviewRequestId) return;
+    state.rows = Array.isArray(payload.rows) ? payload.rows : [];
+    const marketCapConstraint = state.maxMarketCapUsd
+      ? `Market cap < ${fmtUsd(state.maxMarketCapUsd)}; unknown market cap included`
+      : "no market cap constraint";
+    els.tableSubtitle.textContent = `Snapshot #${state.selectedSnapshotId} filtered at ${fmtUsd(minBalanceUsd)} minimum entity balance, SMW In >= ${minSmwIn}, verified liquidity >= ${fmtUsd(minLiquidityUsd)}, 24h volume >= ${fmtUsd(1000)}, 24h txns >= 11 when available, and ${marketCapConstraint}.`;
+    renderTable();
+    if (successMessage) setBanner(successMessage, "success");
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") return;
+    if (requestId === state.overviewRequestId) {
+      setBanner(error instanceof Error ? error.message : "Could not load overview.", "danger");
+    }
+  } finally {
+    if (requestId === state.overviewRequestId) {
+      state.overviewAbortController = null;
+      setOverviewAction(null);
+    }
+  }
 }
 
 async function loadHolders(tokenKey) {
@@ -1067,40 +1077,44 @@ async function loadHolders(tokenKey) {
 }
 
 async function loadScoreHistory(tokenKey) {
-  if (state.scoreHistory.has(tokenKey) || state.loadingScoreHistory.has(tokenKey)) return;
+  const requestedLimit = state.trendWindow === "all" ? null : Number(state.trendWindow || 10);
+  const cachedLimit = state.scoreHistoryLimits.get(tokenKey);
+  if (
+    state.scoreHistory.has(tokenKey) &&
+    (cachedLimit === null || cachedLimit === requestedLimit)
+  ) return;
+  if (state.loadingScoreHistory.has(tokenKey)) return;
   state.loadingScoreHistory.add(tokenKey);
   state.scoreHistoryErrors.delete(tokenKey);
   const minBalanceUsd = Number(els.minBalanceInput.value || 111);
   const params = new URLSearchParams({
     tokenKey,
     minBalanceUsd: String(minBalanceUsd),
+    favoriteEntities: JSON.stringify(state.favoriteEntities),
   });
+  if (requestedLimit != null) params.set("limit", String(requestedLimit));
   try {
     const payload = await fetchJson(`/api/token-score-history?${params.toString()}`);
     state.scoreHistory.set(tokenKey, Array.isArray(payload.rows) ? payload.rows : []);
+    state.scoreHistoryLimits.set(tokenKey, requestedLimit);
   } catch (error) {
     state.scoreHistoryErrors.set(tokenKey, error instanceof Error ? error.message : "Unexpected error");
   } finally {
     state.loadingScoreHistory.delete(tokenKey);
     if (state.openTokenKey === tokenKey) renderTable();
+    const currentLimit = state.trendWindow === "all" ? null : Number(state.trendWindow || 10);
+    if (state.openTokenKey === tokenKey && currentLimit !== requestedLimit) {
+      void loadScoreHistory(tokenKey);
+    }
   }
 }
 
 async function handleRefresh() {
-  const apiKey = els.apiKeyInput.value.trim();
-  if (!apiKey) {
-    setBanner("Paste a Zapper API key before running the analysis.", "danger");
-    return;
-  }
-
-  localStorage.setItem("dex.zapperApiKey", apiKey);
   setBanner("Refresh started. Watching live progress below...", "warning");
 
   try {
     await fetchJson("/api/refresh", {
       method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ apiKey }),
     });
     clearOpenRows();
     await syncRefreshStatus({ silent: true });
@@ -1127,11 +1141,36 @@ document.addEventListener("click", async (event) => {
   const target = event.target;
   if (!(target instanceof HTMLElement)) return;
 
+  const favoriteButton = target.closest("[data-favorite-entity]");
+  if (favoriteButton instanceof HTMLElement) {
+    event.stopPropagation();
+    const entityName = favoriteButton.dataset.favoriteEntity?.trim();
+    if (!entityName) return;
+    const favoriteKey = entityName.toLowerCase();
+    const existing = state.favoriteEntities.some((name) => name.toLowerCase() === favoriteKey);
+    await setFavoriteEntities(existing
+      ? state.favoriteEntities.filter((name) => name.toLowerCase() !== favoriteKey)
+      : [...state.favoriteEntities, entityName]);
+    return;
+  }
+
+  const removeFavoriteButton = target.closest("[data-remove-favorite]");
+  if (removeFavoriteButton instanceof HTMLElement) {
+    event.stopPropagation();
+    const name = removeFavoriteButton.dataset.removeFavorite?.toLowerCase();
+    if (!name) return;
+    await setFavoriteEntities(state.favoriteEntities.filter((favorite) => favorite.toLowerCase() !== name));
+    return;
+  }
+
   const trendWindowButton = target.closest("[data-trend-window]");
   if (trendWindowButton instanceof HTMLElement) {
     event.stopPropagation();
     state.trendWindow = trendWindowButton.dataset.trendWindow === "all" ? "all" : 10;
     renderTable();
+    if (state.activeDrilldownTab === "trend" && state.openTokenKey) {
+      void loadScoreHistory(state.openTokenKey);
+    }
     return;
   }
 
@@ -1188,27 +1227,40 @@ document.addEventListener("click", async (event) => {
     event.stopPropagation();
     const tokenKey = blacklistButton.dataset.blacklistKey;
     const row = state.rows.find((item) => item.tokenKey === tokenKey);
-    if (!row) return;
-    await fetchJson("/api/blacklist", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        tokenKey: row.tokenKey,
-        tokenSymbol: row.tokenSymbol,
-        tokenName: row.tokenName,
-        networkName: row.networkName,
-        chainId: row.chainId,
-        tokenAddress: row.tokenAddress,
-        reason: "Manual blacklist from dashboard",
-      }),
-    });
+    if (!row || state.pendingBlacklistKeys.has(row.tokenKey)) return;
+    const previousRows = state.rows.slice();
+    state.pendingBlacklistKeys.add(row.tokenKey);
+    state.rows = state.rows.filter((item) => item.tokenKey !== row.tokenKey);
     state.openTokenKey = null;
     state.holders.delete(row.tokenKey);
     state.scoreHistory.delete(row.tokenKey);
+    state.scoreHistoryLimits.delete(row.tokenKey);
     state.holderErrors.delete(row.tokenKey);
     state.scoreHistoryErrors.delete(row.tokenKey);
-    await loadOverview();
-    setBanner(`${row.tokenSymbol} blacklisted. It will stay hidden until restored.`, "success");
+    renderTable();
+    setBanner(`Hiding ${row.tokenSymbol}…`, "warning");
+    try {
+      await fetchJson("/api/blacklist", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          tokenKey: row.tokenKey,
+          tokenSymbol: row.tokenSymbol,
+          tokenName: row.tokenName,
+          networkName: row.networkName,
+          chainId: row.chainId,
+          tokenAddress: row.tokenAddress,
+          reason: "Manual blacklist from dashboard",
+        }),
+      });
+      setBanner(`${row.tokenSymbol} blacklisted. It will stay hidden until restored.`, "success");
+    } catch (error) {
+      state.rows = previousRows;
+      setBanner(error instanceof Error ? error.message : "Could not blacklist token.", "danger");
+    } finally {
+      state.pendingBlacklistKeys.delete(row.tokenKey);
+      renderTable();
+    }
     return;
   }
 
@@ -1260,7 +1312,6 @@ function showChartTooltip(dot, event) {
       <div><dt>Holdings</dt><dd>${escapeHtml(fmtUsd(point.holdingsUsd))}</dd></div>
       <div><dt>SMW In</dt><dd>${escapeHtml(point.smwIn)}</dd></div>
       <div><dt>Market Cap</dt><dd>${escapeHtml(fmtUsdOrDash(point.marketCap))}</dd></div>
-      <div><dt>MONI</dt><dd>${escapeHtml(fmtMoniScoreValue(point.moniScore) || "Pending")}</dd></div>
     </dl>
   `;
   els.chartTooltip.hidden = false;
@@ -1295,52 +1346,54 @@ document.addEventListener("focusout", hideChartTooltip);
 
 els.refreshButton.addEventListener("click", handleRefresh);
 els.cancelButton.addEventListener("click", handleCancel);
-els.snapshotSelect.addEventListener("change", async () => {
+function requestOverviewFromControl(loadingLabel, successMessage = "") {
+  clearOpenRows();
+  setBanner(loadingLabel, "warning");
+  void loadOverview({ loadingLabel, successMessage });
+}
+
+els.snapshotSelect.addEventListener("change", () => {
   state.selectedSnapshotId = Number(els.snapshotSelect.value || 0) || null;
-  clearOpenRows();
   updateSummary(state.snapshots.find((item) => item.id === state.selectedSnapshotId) || null);
-  await loadOverview();
+  requestOverviewFromControl("Loading snapshot…");
 });
 
-els.minBalanceInput.addEventListener("change", async () => {
-  clearOpenRows();
-  await loadOverview();
+els.minBalanceInput.addEventListener("change", () => {
+  requestOverviewFromControl("Applying balance filter…");
 });
 
-els.minSmwInput.addEventListener("change", async () => {
-  clearOpenRows();
-  await loadOverview();
+els.minSmwInput.addEventListener("change", () => {
+  requestOverviewFromControl("Applying SMW filter…");
 });
 
-els.applyMarketCapButton.addEventListener("click", async () => {
+els.applyMarketCapButton.addEventListener("click", () => {
   state.maxMarketCapUsd = parseMarketCapFilterInput();
-  clearOpenRows();
-  await loadOverview();
-  setBanner(getMarketCapFilterMessage(state.maxMarketCapUsd), "success");
+  setOverviewAction("filter");
+  requestOverviewFromControl("Applying market cap filter…", getMarketCapFilterMessage(state.maxMarketCapUsd));
 });
 
-els.resetMarketCapButton.addEventListener("click", async () => {
+els.resetMarketCapButton.addEventListener("click", () => {
   els.maxMarketCapInput.value = "";
   state.maxMarketCapUsd = null;
-  clearOpenRows();
-  await loadOverview();
-  setBanner(getMarketCapFilterMessage(state.maxMarketCapUsd), "success");
+  setOverviewAction("reset");
+  requestOverviewFromControl("Resetting market cap filter…", getMarketCapFilterMessage(state.maxMarketCapUsd));
 });
 
-els.maxMarketCapInput.addEventListener("keydown", async (event) => {
+els.maxMarketCapInput.addEventListener("keydown", (event) => {
   if (event.key !== "Enter") return;
   state.maxMarketCapUsd = parseMarketCapFilterInput();
-  clearOpenRows();
-  await loadOverview();
-  setBanner(getMarketCapFilterMessage(state.maxMarketCapUsd), "success");
+  setOverviewAction("filter");
+  requestOverviewFromControl("Applying market cap filter…", getMarketCapFilterMessage(state.maxMarketCapUsd));
 });
 
 async function init() {
-  const storedApiKey = localStorage.getItem("dex.zapperApiKey");
-  if (storedApiKey) {
-    els.apiKeyInput.value = storedApiKey;
+  try {
+    const storedFavorites = JSON.parse(localStorage.getItem("dex.favoriteEntities") || "[]");
+    state.favoriteEntities = Array.isArray(storedFavorites) ? storedFavorites.map((name) => String(name).trim()).filter(Boolean) : [];
+  } catch {
+    state.favoriteEntities = [];
   }
-
+  renderFavoriteEntities();
   try {
     renderRefreshActivity();
     await syncRefreshStatus({ silent: true });
@@ -1350,5 +1403,12 @@ async function init() {
     setBanner(error.message, "danger");
   }
 }
+
+els.addFavoriteEntityButton.addEventListener("click", () => void addFavoriteEntityFromInput());
+els.favoriteEntityInput.addEventListener("keydown", (event) => {
+  if (event.key !== "Enter") return;
+  event.preventDefault();
+  void addFavoriteEntityFromInput();
+});
 
 init();
