@@ -2,7 +2,8 @@ name: DEX holdings refresh
 
 on:
   schedule:
-    - cron: "0 1 * * *"
+    # Avoid GitHub Actions' top-of-hour schedule load; UTC+7 = 08:17 local.
+    - cron: "17 1 * * *"
   workflow_dispatch:
 
 concurrency:
