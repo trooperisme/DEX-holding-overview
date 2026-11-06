@@ -102,6 +102,7 @@ test("overview API applies favorite entity scoring", async () => {
       totalRows: 1,
       finishedAt: new Date().toISOString(),
     });
+    await storage.addFavoriteEntity("Crypto Andrew");
     await storage.close();
 
     // Resolve the TypeScript source under ts-node and the compiled JavaScript
@@ -123,7 +124,7 @@ test("overview API applies favorite entity scoring", async () => {
       const sessionCookie = getSessionCookie(login.headers["set-cookie"]);
       const response = await request(
         server,
-        `/api/overview?snapshotId=${snapshotId}&minBalanceUsd=111&minSmwIn=1&minLiquidityUsd=11111&favoriteEntities=${encodeURIComponent(JSON.stringify(["Crypto Andrew"]))}`,
+        `/api/overview?snapshotId=${snapshotId}&minBalanceUsd=111&minSmwIn=1&minLiquidityUsd=11111`,
         { headers: { cookie: sessionCookie } },
       );
       assert.equal(response.status, 200);
@@ -135,6 +136,13 @@ test("overview API applies favorite entity scoring", async () => {
       assert.equal(payload.rows[0].favoriteScoreMultiplier, 1.5);
       assert.ok(payload.rows[0].score >= payload.rows[0].baseScore);
       assert.ok(Number.isFinite(payload.rows[0].score));
+
+      const oldClientOverride = await request(
+        server,
+        `/api/overview?snapshotId=${snapshotId}&favoriteEntities=${encodeURIComponent(JSON.stringify([]))}`,
+        { headers: { cookie: sessionCookie } },
+      );
+      assert.equal(JSON.parse(oldClientOverride.body).rows[0].favoriteEntityCount, 1);
     } finally {
       await closeServer(server);
     }

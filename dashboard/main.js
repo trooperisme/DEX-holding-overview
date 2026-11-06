@@ -1,11 +1,21 @@
 const els = {
+  initialLoadingScreen: document.getElementById("initial-loading-screen"),
+  initialLoadingTitle: document.getElementById("initial-loading-title"),
+  initialLoadingCopy: document.getElementById("initial-loading-copy"),
+  initialLoadingIndicator: document.querySelector(".initial-loading-indicator"),
+  initialLoadingSteps: document.getElementById("initial-loading-steps"),
+  initialLoadingRetry: document.getElementById("initial-loading-retry"),
   heroMeta: document.getElementById("hero-meta"),
+  marketRegimePanel: document.getElementById("market-regime-panel"),
   favoriteEntityInput: document.getElementById("favorite-entity-input"),
   addFavoriteEntityButton: document.getElementById("add-favorite-entity-button"),
   favoriteEntityList: document.getElementById("favorite-entity-list"),
+  favoriteEntityHelp: document.getElementById("favorite-entity-help"),
   refreshButton: document.getElementById("refresh-button"),
   cancelButton: document.getElementById("cancel-button"),
+  themeToggle: document.getElementById("theme-toggle"),
   snapshotSelect: document.getElementById("snapshot-select"),
+  snapshotFocus: document.getElementById("snapshot-focus"),
   minBalanceInput: document.getElementById("min-balance-input"),
   minSmwInput: document.getElementById("min-smw-input"),
   maxMarketCapInput: document.getElementById("max-market-cap-input"),
@@ -18,6 +28,7 @@ const els = {
   tableBody: document.getElementById("table-body"),
   tableStatus: document.getElementById("table-status"),
   tableSubtitle: document.getElementById("table-subtitle"),
+  tableDetailRail: document.getElementById("table-detail-rail"),
   jobStatus: document.getElementById("job-status"),
   activitySubtitle: document.getElementById("activity-subtitle"),
   jobProgressLabel: document.getElementById("job-progress-label"),
@@ -51,8 +62,10 @@ const state = {
   sortDir: "desc",
   maxMarketCapUsd: null,
   favoriteEntities: [],
+  savingFavorites: false,
   refreshJob: null,
   refreshPollTimer: null,
+  marketRegime: null,
 };
 
 function escapeHtml(value) {
@@ -62,6 +75,59 @@ function escapeHtml(value) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
+}
+
+const FAVORITES_CACHE_KEY = "dex.favoriteEntities";
+const FAVORITES_MIGRATED_KEY = "dex.favoriteEntitiesServerSyncedV1";
+const THEME_CACHE_KEY = "dex.dashboardTheme";
+
+function applyDashboardTheme(theme, persist = false) {
+  const normalizedTheme = theme === "dark" ? "dark" : "light";
+  document.documentElement.dataset.theme = normalizedTheme;
+  document.documentElement.style.colorScheme = normalizedTheme;
+  if (els.themeToggle) {
+    const isDark = normalizedTheme === "dark";
+    els.themeToggle.textContent = isDark ? "Light mode" : "Dark mode";
+    els.themeToggle.setAttribute("aria-pressed", String(isDark));
+  }
+  if (persist) {
+    try {
+      localStorage.setItem(THEME_CACHE_KEY, normalizedTheme);
+    } catch { /* Theme still applies for the current page. */ }
+  }
+}
+
+function initialiseDashboardTheme() {
+  let savedTheme = document.documentElement.dataset.theme;
+  if (savedTheme !== "light" && savedTheme !== "dark") {
+    savedTheme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  }
+  applyDashboardTheme(savedTheme);
+}
+
+function normalizeFavoriteNames(names) {
+  const unique = new Map();
+  for (const rawName of Array.isArray(names) ? names : []) {
+    const name = String(rawName || "").trim();
+    if (name && name.length <= 160 && !unique.has(name.toLowerCase())) unique.set(name.toLowerCase(), name);
+  }
+  return [...unique.values()];
+}
+
+function cacheFavoriteEntities(names) {
+  try {
+    localStorage.setItem(FAVORITES_MIGRATED_KEY, "1");
+    localStorage.setItem(FAVORITES_CACHE_KEY, JSON.stringify(names));
+  } catch { /* Server storage remains the source of truth. */ }
+}
+
+function applyFavoriteEntities(names) {
+  state.favoriteEntities = normalizeFavoriteNames(names);
+  cacheFavoriteEntities(state.favoriteEntities);
+  state.scoreHistory.clear();
+  state.scoreHistoryLimits.clear();
+  state.scoreHistoryErrors.clear();
+  renderFavoriteEntities();
 }
 
 function renderFavoriteEntities() {
@@ -75,31 +141,76 @@ function renderFavoriteEntities() {
     : '<span class="favorite-entity-empty">No favorites yet</span>';
 }
 
+async function syncFavoriteEntities() {
+  let cachedNames = [];
+  let alreadyMigrated = false;
+  try {
+    cachedNames = normalizeFavoriteNames(JSON.parse(localStorage.getItem(FAVORITES_CACHE_KEY) || "[]"));
+    alreadyMigrated = localStorage.getItem(FAVORITES_MIGRATED_KEY) === "1";
+  } catch { /* A fresh browser has no favorites to migrate. */ }
+
+  const payload = !alreadyMigrated && cachedNames.length
+    ? await fetchJson("/api/favorite-entities/merge", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ favoriteEntities: cachedNames }),
+      })
+    : await fetchJson("/api/favorite-entities");
+  applyFavoriteEntities(payload.favoriteEntities);
+  els.favoriteEntityHelp.textContent = "Favorites sync across your devices and affect token scores.";
+}
+
 async function setFavoriteEntities(names) {
-  const unique = new Map();
-  for (const rawName of names) {
-    const name = String(rawName || "").trim();
-    if (name && !unique.has(name.toLowerCase())) unique.set(name.toLowerCase(), name);
-  }
-  state.favoriteEntities = [...unique.values()];
-  localStorage.setItem("dex.favoriteEntities", JSON.stringify(state.favoriteEntities));
+  if (state.savingFavorites) return false;
+  const nextNames = normalizeFavoriteNames(names);
+  const currentKeys = new Set(state.favoriteEntities.map((name) => name.toLowerCase()));
+  const nextKeys = new Set(nextNames.map((name) => name.toLowerCase()));
+  const added = nextNames.filter((name) => !currentKeys.has(name.toLowerCase()));
+  const removed = state.favoriteEntities.filter((name) => !nextKeys.has(name.toLowerCase()));
+  if (!added.length && !removed.length) return true;
+  if (added.length + removed.length !== 1) return false;
+
   const openTokenKey = state.openTokenKey;
-  state.scoreHistory.clear();
-  state.scoreHistoryLimits.clear();
-  state.scoreHistoryErrors.clear();
-  renderFavoriteEntities();
-  renderTable();
-  await loadOverview();
-  if (openTokenKey && state.activeDrilldownTab === "trend") {
-    void loadScoreHistory(openTokenKey);
+  state.savingFavorites = true;
+  els.addFavoriteEntityButton.disabled = true;
+  els.favoriteEntityInput.disabled = true;
+  els.favoriteEntityHelp.textContent = "Saving favorites…";
+  try {
+    const payload = await fetchJson("/api/favorite-entities", {
+      method: added.length ? "POST" : "DELETE",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: added[0] || removed[0] }),
+    });
+    applyFavoriteEntities(payload.favoriteEntities);
+    renderTable();
+    await loadOverview();
+    if (openTokenKey && state.activeDrilldownTab === "trend") {
+      void loadScoreHistory(openTokenKey);
+    }
+    els.favoriteEntityHelp.textContent = "Favorites synced across your devices.";
+    return true;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Could not save favorites.";
+    els.favoriteEntityHelp.textContent = "Could not sync favorites. Try again.";
+    setBanner(message, "danger");
+    return false;
+  } finally {
+    state.savingFavorites = false;
+    els.addFavoriteEntityButton.disabled = false;
+    els.favoriteEntityInput.disabled = false;
   }
 }
 
 async function addFavoriteEntityFromInput() {
   const name = els.favoriteEntityInput.value.trim();
   if (!name) return;
-  els.favoriteEntityInput.value = "";
-  await setFavoriteEntities([...state.favoriteEntities, name]);
+  if (name.length > 160) {
+    els.favoriteEntityHelp.textContent = "Entity names must be 160 characters or fewer.";
+    return;
+  }
+  if (await setFavoriteEntities([...state.favoriteEntities, name])) {
+    els.favoriteEntityInput.value = "";
+  }
 }
 
 function getDisplayTokenName(row) {
@@ -179,9 +290,8 @@ function buildMetricCell(value, max, formatter) {
   const width = Number.isFinite(numeric) && numeric > 0 && max > 0
     ? Math.min(100, (numeric / max) * 100)
     : 0;
-  const intensity = width > 0 ? Math.max(0.18, Math.min(0.72, width / 100)) : 0;
   const bar = width > 0
-    ? `<span class="metric-cell__bar" style="width: ${width.toFixed(3)}%; --metric-intensity: ${intensity.toFixed(3)}" aria-hidden="true"></span>`
+    ? `<span class="metric-cell__bar" style="width: ${width.toFixed(3)}%" aria-hidden="true"></span>`
     : "";
 
   return `${bar}<span class="metric-cell__value">${escapeHtml(formatter(value))}</span>`;
@@ -391,6 +501,72 @@ async function fetchJson(url, options) {
   return payload;
 }
 
+function buildGaugeSegment(start, end) {
+  const point = (angle) => {
+    const radians = (angle * Math.PI) / 180;
+    return [120 + 88 * Math.cos(radians), 116 + 88 * Math.sin(radians)];
+  };
+  const [x1, y1] = point(start);
+  const [x2, y2] = point(end);
+  return `M ${x1.toFixed(2)} ${y1.toFixed(2)} A 88 88 0 0 1 ${x2.toFixed(2)} ${y2.toFixed(2)}`;
+}
+
+function renderMarketRegime() {
+  const regime = state.marketRegime;
+  if (!regime) {
+    els.marketRegimePanel.innerHTML = `
+      <div class="market-regime-panel__unavailable">
+        <div><p class="eyebrow">Market regime</p><h2 id="market-regime-title">Signal unavailable</h2></div>
+        <p>Holdings data is ready. TehcScreener’s public index could not be reached right now.</p>
+      </div>`;
+    els.marketRegimePanel.setAttribute("aria-busy", "false");
+    return;
+  }
+
+  const score = Math.max(0, Math.min(100, Number(regime.score || 0)));
+  const needleAngle = 180 + score * 1.8;
+  const radians = (needleAngle * Math.PI) / 180;
+  const needleX = 120 + 67 * Math.cos(radians);
+  const needleY = 116 + 67 * Math.sin(radians);
+  const segments = Array.from({ length: 5 }, (_, index) => buildGaugeSegment(182 + index * 35.5, 212 + index * 35.5));
+  const band = String(regime.band || "cold").toLowerCase();
+  const regimeScale = [
+    ["ded", "0–19"],
+    ["cold", "20–39"],
+    ["active", "40–59"],
+    ["hot", "60–79"],
+    ["euphoric", "80–100"],
+  ];
+  els.marketRegimePanel.className = `market-regime-panel market-regime-panel--${escapeHtml(band)}`;
+  els.marketRegimePanel.innerHTML = `
+    <div class="market-regime-copy">
+      <p class="eyebrow" id="market-regime-title">Market Regime</p>
+      <p>90D + 1Y onchain activity</p>
+    </div>
+    <div class="trench-gauge" role="img" aria-label="Market regime ${score}, ${escapeHtml(band)}">
+      <svg viewBox="0 0 240 138" aria-hidden="true">
+        ${segments.map((path, index) => `<path class="trench-gauge__segment trench-gauge__segment--${index}" d="${path}"/>`).join("")}
+        <line class="trench-gauge__needle" x1="120" y1="116" x2="${needleX.toFixed(2)}" y2="${needleY.toFixed(2)}" />
+        <circle class="trench-gauge__hub" cx="120" cy="116" r="7" />
+      </svg>
+      <div class="trench-gauge__reading"><strong>${Math.round(score)}</strong><span>${escapeHtml(band)}</span></div>
+    </div>
+    <div class="market-regime-scale" aria-label="Market regime scale">
+      ${regimeScale.map(([key, range]) => `<div class="market-regime-scale__row ${key === band ? "is-current" : ""}"><span>${escapeHtml(key)}</span><strong>${range}</strong></div>`).join("")}
+    </div>`;
+  els.marketRegimePanel.setAttribute("aria-busy", "false");
+}
+
+async function loadMarketRegime() {
+  try {
+    const payload = await fetchJson("/api/market-regime");
+    state.marketRegime = payload.regime ? { ...payload.regime, stale: Boolean(payload.stale) } : null;
+  } catch {
+    state.marketRegime = null;
+  }
+  renderMarketRegime();
+}
+
 function setOverviewAction(action) {
   state.overviewAction = action;
   const loading = Boolean(action);
@@ -584,6 +760,7 @@ function updateSummary(snapshot) {
 
   if (!snapshot) {
     els.heroMeta.textContent = "No snapshot yet. Run your first portfolio analysis.";
+    if (els.snapshotFocus) els.snapshotFocus.textContent = "No completed snapshot selected.";
     return;
   }
 
@@ -597,6 +774,9 @@ function updateSummary(snapshot) {
         : "Ready";
 
   els.heroMeta.textContent = `${fmtDate(snapshot.finishedAt || snapshot.createdAt)} · ${suffix}`;
+  if (els.snapshotFocus) {
+    els.snapshotFocus.textContent = `Snapshot #${snapshot.id} · ${fmtDate(snapshot.finishedAt || snapshot.createdAt)} · ${suffix}`;
+  }
 }
 
 function renderSnapshots() {
@@ -899,6 +1079,58 @@ function buildDrilldownRows(tokenKey) {
   `;
 }
 
+function renderTableDetailRail() {
+  if (!els.tableDetailRail) return;
+  const row = state.rows.find((item) => item.tokenKey === state.openTokenKey);
+  if (!row) {
+    els.tableDetailRail.innerHTML = `
+      <div class="table-detail-rail__empty">
+        <p class="eyebrow">Selected token</p>
+        <h2>Inspect a holding</h2>
+        <p>Choose a row to keep its score, capital footprint, holders and trend context beside the ranking.</p>
+      </div>
+    `;
+    return;
+  }
+
+  const favorites = Array.isArray(row.favoriteEntityNames) ? row.favoriteEntityNames : [];
+  const holderState = state.loadingHolders.has(row.tokenKey)
+    ? "Loading holders…"
+    : state.holders.has(row.tokenKey)
+      ? `${state.holders.get(row.tokenKey).length} matching holders`
+      : "Open the row to load holders";
+  const trendState = state.loadingScoreHistory.has(row.tokenKey)
+    ? "Loading trend…"
+    : state.scoreHistory.has(row.tokenKey)
+      ? `${state.scoreHistory.get(row.tokenKey).length} score snapshots`
+      : "Open the row to load trend";
+
+  els.tableDetailRail.innerHTML = `
+    <div class="table-detail-rail__header">
+      <div>
+        <p class="eyebrow">Selected token</p>
+        <h2>${escapeHtml(row.tokenSymbol)} <span>${escapeHtml(getDisplayTokenName(row))}</span></h2>
+      </div>
+      <strong class="table-detail-rail__score">${escapeHtml(fmtScore(row.score))}</strong>
+    </div>
+    <div class="table-detail-rail__metrics">
+      <div><span>Holdings</span><strong>${escapeHtml(fmtUsd(row.holdingsUsd))}</strong></div>
+      <div><span>SMW In</span><strong>${escapeHtml(String(row.smwIn))}</strong></div>
+      <div><span>Market cap</span><strong>${escapeHtml(fmtUsdOrDash(row.marketCap))}</strong></div>
+      <div><span>Liquidity</span><strong>${escapeHtml(fmtUsdOrDash(row.liquidityUsd))}</strong></div>
+    </div>
+    <div class="table-detail-rail__section">
+      <span>Favorite entities</span>
+      <p>${favorites.length ? escapeHtml(favorites.join(", ")) : "No favorite entity holds this token."}</p>
+    </div>
+    <div class="table-detail-rail__section">
+      <span>Detail availability</span>
+      <p>${escapeHtml(holderState)} · ${escapeHtml(trendState)}</p>
+    </div>
+    <p class="table-detail-rail__note">Open the selected row below for the full holders list and score trend.</p>
+  `;
+}
+
 function renderTable() {
   const rows = getSortedRows(state.rows);
   const scoreMax = getMetricMax(state.rows, "score");
@@ -917,6 +1149,7 @@ function renderTable() {
         </td>
       </tr>
     `;
+    renderTableDetailRail();
     return;
   }
 
@@ -954,12 +1187,12 @@ function renderTable() {
               <strong title="${escapeHtml(displayTokenName)}">${escapeHtml(displayTokenName)}${row.favoriteEntityCount > 0 ? ` <span class="favorite-entity-count" title="${row.favoriteEntityCount} starred holder${row.favoriteEntityCount === 1 ? "" : "s"}">⭐${row.favoriteEntityCount > 1 ? `×${row.favoriteEntityCount}` : ""}</span>` : ""}</strong>
             </div>
           </td>
-          <td class="metric-cell">${buildMetricCell(row.score, scoreMax, fmtScore)}</td>
+          <td class="metric-cell metric-cell--score">${buildMetricCell(row.score, scoreMax, fmtScore)}</td>
           <td>${escapeHtml(fmtUsdOrDash(row.marketCap))}</td>
           <td>${networkBadge || '<span class="chain-text">Unknown</span>'}</td>
           <td>${escapeHtml(fmtTokenAge(row.tokenAgeHours))}</td>
-          <td class="metric-cell">${buildMetricCell(row.holdingsUsd, holdingsUsdMax, fmtUsd)}</td>
-          <td class="metric-cell">${buildMetricCell(row.smwIn, smwInMax, String)}</td>
+          <td class="metric-cell metric-cell--holdings">${buildMetricCell(row.holdingsUsd, holdingsUsdMax, fmtUsd)}</td>
+          <td class="metric-cell metric-cell--smw">${buildMetricCell(row.smwIn, smwInMax, String)}</td>
           <td>
             <button class="danger-button" type="button" data-blacklist-key="${escapeHtml(row.tokenKey)}" ${state.pendingBlacklistKeys.has(row.tokenKey) ? "disabled aria-busy=\"true\"" : ""}>
               ${state.pendingBlacklistKeys.has(row.tokenKey) ? "Hiding…" : "Blacklist"}
@@ -974,6 +1207,7 @@ function renderTable() {
       `;
     })
     .join("");
+  renderTableDetailRail();
 }
 
 async function loadSnapshots() {
@@ -1016,7 +1250,7 @@ async function loadOverview(options = {}) {
       state.overviewAbortController = null;
       setOverviewAction(null);
     }
-    return;
+    return true;
   }
 
   const minBalanceUsd = Number(els.minBalanceInput.value || 111);
@@ -1027,14 +1261,13 @@ async function loadOverview(options = {}) {
     minBalanceUsd: String(minBalanceUsd),
     minSmwIn: String(minSmwIn),
     minLiquidityUsd: String(minLiquidityUsd),
-    favoriteEntities: JSON.stringify(state.favoriteEntities),
   });
   if (state.maxMarketCapUsd) {
     params.set("maxMarketCapUsd", String(state.maxMarketCapUsd));
   }
   try {
     const payload = await fetchJson(`/api/overview?${params.toString()}`, { signal: controller.signal });
-    if (requestId !== state.overviewRequestId) return;
+    if (requestId !== state.overviewRequestId) return false;
     state.rows = Array.isArray(payload.rows) ? payload.rows : [];
     const marketCapConstraint = state.maxMarketCapUsd
       ? `Market cap < ${fmtUsd(state.maxMarketCapUsd)}; unknown market cap included`
@@ -1042,11 +1275,13 @@ async function loadOverview(options = {}) {
     els.tableSubtitle.textContent = `Snapshot #${state.selectedSnapshotId} filtered at ${fmtUsd(minBalanceUsd)} minimum entity balance, SMW In >= ${minSmwIn}, verified liquidity >= ${fmtUsd(minLiquidityUsd)}, 24h volume >= ${fmtUsd(1000)}, 24h txns >= 11 when available, and ${marketCapConstraint}.`;
     renderTable();
     if (successMessage) setBanner(successMessage, "success");
+    return true;
   } catch (error) {
-    if (error instanceof DOMException && error.name === "AbortError") return;
+    if (error instanceof DOMException && error.name === "AbortError") return false;
     if (requestId === state.overviewRequestId) {
       setBanner(error instanceof Error ? error.message : "Could not load overview.", "danger");
     }
+    return false;
   } finally {
     if (requestId === state.overviewRequestId) {
       state.overviewAbortController = null;
@@ -1090,7 +1325,6 @@ async function loadScoreHistory(tokenKey) {
   const params = new URLSearchParams({
     tokenKey,
     minBalanceUsd: String(minBalanceUsd),
-    favoriteEntities: JSON.stringify(state.favoriteEntities),
   });
   if (requestedLimit != null) params.set("limit", String(requestedLimit));
   try {
@@ -1346,6 +1580,10 @@ document.addEventListener("focusout", hideChartTooltip);
 
 els.refreshButton.addEventListener("click", handleRefresh);
 els.cancelButton.addEventListener("click", handleCancel);
+els.themeToggle?.addEventListener("click", () => {
+  const nextTheme = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+  applyDashboardTheme(nextTheme, true);
+});
 function requestOverviewFromControl(loadingLabel, successMessage = "") {
   clearOpenRows();
   setBanner(loadingLabel, "warning");
@@ -1386,21 +1624,90 @@ els.maxMarketCapInput.addEventListener("keydown", (event) => {
   requestOverviewFromControl("Applying market cap filter…", getMarketCapFilterMessage(state.maxMarketCapUsd));
 });
 
-async function init() {
+function setInitialLoadingStage(activeStep) {
+  const labels = {
+    favorites: "Syncing favorite entities…",
+    status: "Checking refresh status…",
+    snapshots: "Loading snapshot history…",
+    overview: "Preparing token holdings…",
+  };
+  const loadingSteps = ["favorites", "status", "snapshots", "overview"];
+  Array.from(els.initialLoadingSteps.querySelectorAll("[data-loading-step]")).forEach((step, index) => {
+    const isActive = step.dataset.loadingStep === activeStep;
+    step.removeAttribute("aria-current");
+    step.dataset.state = index < loadingSteps.indexOf(activeStep) ? "complete" : "pending";
+    if (isActive) {
+      step.setAttribute("aria-current", "step");
+    }
+  });
+  els.initialLoadingCopy.textContent = labels[activeStep] || "Preparing your dashboard…";
+  els.initialLoadingScreen.setAttribute("aria-label", `Loading your holdings. ${labels[activeStep] || "Preparing your dashboard…"}`);
+}
+
+async function loadInitialDashboard() {
+  const shouldRestoreFocus = document.activeElement === els.initialLoadingRetry;
+  els.initialLoadingScreen.hidden = false;
+  els.initialLoadingScreen.setAttribute("aria-busy", "true");
+  els.initialLoadingScreen.setAttribute("aria-label", "Loading your holdings.");
+  els.initialLoadingTitle.textContent = "Loading your holdings";
+  els.initialLoadingSteps.hidden = false;
+  els.initialLoadingIndicator.hidden = false;
+  els.initialLoadingRetry.hidden = true;
+  els.initialLoadingRetry.disabled = true;
+  setInitialLoadingStage("favorites");
+
   try {
-    const storedFavorites = JSON.parse(localStorage.getItem("dex.favoriteEntities") || "[]");
-    state.favoriteEntities = Array.isArray(storedFavorites) ? storedFavorites.map((name) => String(name).trim()).filter(Boolean) : [];
+    renderRefreshActivity();
+    await Promise.all([syncFavoriteEntities(), loadSnapshots(), loadMarketRegime()]);
+    setInitialLoadingStage("overview");
+    const overviewLoaded = await loadOverview();
+    if (!overviewLoaded) throw new Error("Could not load the token overview. Check your connection and try again.");
+    els.initialLoadingScreen.hidden = true;
+    els.initialLoadingScreen.setAttribute("aria-busy", "false");
+    if (shouldRestoreFocus) els.refreshButton.focus();
+    void syncRefreshStatus({ silent: true }).catch((error) => {
+      setBanner(error instanceof Error ? error.message : "Could not load refresh status.", "warning");
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Could not load dashboard data.";
+    els.initialLoadingTitle.textContent = "Holdings couldn’t load";
+    els.initialLoadingCopy.textContent = `${message} Try again when your connection is ready.`;
+    els.initialLoadingScreen.setAttribute("aria-label", `Holdings could not load. ${message}`);
+    els.initialLoadingScreen.setAttribute("aria-busy", "false");
+    els.initialLoadingSteps.hidden = true;
+    els.initialLoadingIndicator.hidden = true;
+    els.initialLoadingRetry.hidden = false;
+    els.initialLoadingRetry.focus();
+  } finally {
+    els.initialLoadingRetry.disabled = false;
+  }
+}
+
+async function init() {
+  initialiseDashboardTheme();
+  try {
+    state.favoriteEntities = normalizeFavoriteNames(JSON.parse(localStorage.getItem(FAVORITES_CACHE_KEY) || "[]"));
   } catch {
     state.favoriteEntities = [];
   }
   renderFavoriteEntities();
+  void loadInitialDashboard();
+}
+
+async function refreshFavoriteEntitiesOnReturn() {
+  if (document.hidden || !els.initialLoadingScreen.hidden || state.savingFavorites) return;
   try {
-    renderRefreshActivity();
-    await syncRefreshStatus({ silent: true });
-    await loadSnapshots();
+    const payload = await fetchJson("/api/favorite-entities");
+    const latest = normalizeFavoriteNames(payload.favoriteEntities);
+    if (JSON.stringify(latest) === JSON.stringify(state.favoriteEntities)) return;
+    applyFavoriteEntities(latest);
+    renderTable();
     await loadOverview();
-  } catch (error) {
-    setBanner(error.message, "danger");
+    if (state.openTokenKey && state.activeDrilldownTab === "trend") {
+      void loadScoreHistory(state.openTokenKey);
+    }
+  } catch {
+    els.favoriteEntityHelp.textContent = "Could not check favorite sync. Reload to retry.";
   }
 }
 
@@ -1410,5 +1717,8 @@ els.favoriteEntityInput.addEventListener("keydown", (event) => {
   event.preventDefault();
   void addFavoriteEntityFromInput();
 });
+
+els.initialLoadingRetry.addEventListener("click", () => void loadInitialDashboard());
+document.addEventListener("visibilitychange", () => void refreshFavoriteEntitiesOnReturn());
 
 init();

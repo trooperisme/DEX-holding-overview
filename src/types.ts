@@ -41,6 +41,19 @@ export type SnapshotRecord = {
   finishedAt: string | null;
 };
 
+export type TrenchIndexSnapshot = {
+  id: number;
+  day: string;
+  score: number;
+  band: "ded" | "cold" | "active" | "hot" | "euphoric";
+  padVolume: number | null;
+  tokensLaunched: number | null;
+  botVolume: number | null;
+  botFees: number | null;
+  sourceUrl: string;
+  fetchedAt: string;
+};
+
 export type EntityFetchRunStatus = "running" | "success" | "failed" | "canceled";
 
 export type EntityFetchRunRecord = {

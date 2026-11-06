@@ -3,15 +3,39 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>DEX Holding Overview</title>
-    <link rel="stylesheet" href="/dashboard/styles.css?v=20260921-favorites-layout-1" />
+    <title>DEX Holdings</title>
+    <script>
+      try {
+        const savedTheme = localStorage.getItem("dex.dashboardTheme");
+        if (savedTheme === "light" || savedTheme === "dark") document.documentElement.dataset.theme = savedTheme;
+      } catch {}
+    </script>
+    <link rel="stylesheet" href="/dashboard/styles.css?v=20261106-zagreb-5" />
   </head>
-  <body>
+  <body class="zagreb-dashboard">
+    <section class="initial-loading-screen" id="initial-loading-screen" role="status" aria-live="polite" aria-busy="true">
+      <div class="initial-loading-card">
+        <div class="initial-loading-brand"><span class="initial-loading-mark" aria-hidden="true">D</span><span>DEX HOLDINGS</span></div>
+        <p class="initial-loading-eyebrow">PORTFOLIO INTELLIGENCE</p>
+        <h1 id="initial-loading-title">Loading your holdings</h1>
+        <p class="initial-loading-copy" id="initial-loading-copy">Preparing the latest snapshot and token overview.</p>
+        <div class="initial-loading-indicator" aria-hidden="true"><span></span></div>
+        <ol class="initial-loading-steps" id="initial-loading-steps">
+          <li data-loading-step="favorites" aria-current="step"><span></span>Syncing favorite entities</li>
+          <li data-loading-step="status"><span></span>Checking refresh status</li>
+          <li data-loading-step="snapshots"><span></span>Loading snapshot history</li>
+          <li data-loading-step="overview"><span></span>Preparing token holdings</li>
+        </ol>
+        <button class="initial-loading-retry" id="initial-loading-retry" type="button" hidden>Try again</button>
+      </div>
+      <span class="initial-loading-footnote">DEX HOLDING OVERVIEW <span>·</span> SMART MONEY, IN CONTEXT</span>
+    </section>
+
     <main class="app-shell">
       <section class="hero-panel">
         <div class="hero-copy">
-          <p class="eyebrow">DEX Smart Money</p>
-          <h1>Holding Overview</h1>
+          <p class="eyebrow">Onchain decision surface</p>
+          <h1>DEX HOLDINGS</h1>
           <p class="hero-meta" id="hero-meta">
             Token holdings across your tracked Cielo portfolios.
           </p>
@@ -25,13 +49,14 @@
               <button class="favorite-entity-add" id="add-favorite-entity-button" type="button" aria-label="Add favorite entity">★</button>
             </div>
             <div class="favorite-entity-list" id="favorite-entity-list" aria-live="polite"></div>
-            <p class="favorite-entity-help">Favorites boost the score of tokens they hold.</p>
+            <p class="favorite-entity-help" id="favorite-entity-help">Favorites boost the score of tokens they hold.</p>
           </div>
           <div class="hero-action-stack">
             <button class="action-button action-button--primary" id="refresh-button" type="button">
-              Run Analysis
+              Analysis
             </button>
             <a class="action-button action-button--blacklist" href="/dashboard/blacklist.html">Blacklist</a>
+            <button class="action-button action-button--theme" id="theme-toggle" type="button" aria-pressed="false">Dark mode</button>
             <button class="action-button action-button--secondary" id="cancel-button" type="button" hidden>
               Cancel Run
             </button>
@@ -39,10 +64,15 @@
         </div>
       </section>
 
+      <section class="market-regime-panel" id="market-regime-panel" aria-labelledby="market-regime-title" aria-busy="true">
+        <div class="market-regime-panel__loading">Loading market regime…</div>
+      </section>
+
       <section class="control-panel">
-        <div class="control-block">
+        <div class="control-block control-block--snapshot">
           <label class="field-label" for="snapshot-select">Snapshot</label>
           <select id="snapshot-select"></select>
+          <p class="snapshot-focus" id="snapshot-focus" hidden>Choose a snapshot to inspect its holdings.</p>
         </div>
         <div class="control-block">
           <label class="field-label" for="min-balance-input">Min Entity Balance USD</label>
@@ -67,7 +97,7 @@
         </div>
       </section>
 
-      <section class="activity-panel">
+      <section class="activity-panel" hidden>
         <div class="activity-panel__header">
           <div>
             <h2>Refresh Activity</h2>
@@ -95,8 +125,8 @@
         <section class="table-panel">
           <div class="table-topline">
             <div>
-              <h2>DEX Holding Overview</h2>
-              <p id="table-subtitle">
+              <h2>Holding Signal Board</h2>
+              <p id="table-subtitle" hidden>
                 Tokens held by entities in tracked Cielo portfolios.
               </p>
             </div>
@@ -149,10 +179,17 @@
             </table>
           </div>
         </section>
+        <aside class="table-detail-rail" id="table-detail-rail" aria-live="polite" hidden>
+          <div class="table-detail-rail__empty">
+            <p class="eyebrow">Selected token</p>
+            <h2>Inspect a holding</h2>
+            <p>Choose a row to keep its score, capital footprint, holders and trend context beside the ranking.</p>
+          </div>
+        </aside>
       </section>
     </main>
 
     <div id="chart-tooltip" class="chart-tooltip" hidden></div>
-    <script src="/dashboard/main.js?v=20261017-auth-redirect-1" defer></script>
+    <script src="/dashboard/main.js?v=20261106-zagreb-5" defer></script>
   </body>
 </html>

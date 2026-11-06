@@ -1,6 +1,6 @@
 # DEX Holding Overview
 
-Local DEX holdings dashboard for Zapper bundle entities.
+Local DEX holdings dashboard for Cielo portfolio entities.
 
 The dashboard and all API routes require a private login. Set
 `DASHBOARD_PASSWORD` in the deployment environment. The local fallback password is
@@ -9,8 +9,8 @@ For stable signed sessions across deploys, set `DASHBOARD_SESSION_SECRET` too.
 
 ## Features
 
-- Imports tracked entities from `data/raw/dex-entities-zapper.csv`
-- Fetches holdings from Zapper using an API key entered in the UI
+- Imports tracked entities from `data/raw/entity-cielo-portfolio-links.csv`
+- Fetches holdings from Cielo using an API key entered in the UI
 - Stores snapshot history in SQLite
 - Aggregates token rows by `token key`
 - Supports a persistent blacklist with restore actions
@@ -34,7 +34,7 @@ For stable signed sessions across deploys, set `DASHBOARD_SESSION_SECRET` too.
 
 ## Data
 
-- Seed CSV: `data/raw/dex-entities-zapper.csv`
+- Seed CSV: `data/raw/entity-cielo-portfolio-links.csv`
 - SQLite DB: `data/db/dex-holding-overview.db`
 
 ## Railway SQLite to Supabase migration
@@ -68,8 +68,32 @@ After the import, point every new Railway project at Supabase with:
 DATABASE_URL='postgresql://...'
 DATABASE_SCHEMA=dex
 FIRECRAWL_API_KEY=...
-TRADER_ENTITIES_CSV=data/raw/dex-entities-zapper.csv
+CIELO_ENTITIES_CSV=data/raw/entity-cielo-portfolio-links.csv
 HOST=0.0.0.0
 ```
 
 With that setup, Railway becomes disposable compute and Supabase keeps the durable history.
+
+## Daily Railway full scan
+
+The web service and the daily scanner should be separate Railway services using
+the same repository and environment variables. The scanner runs the task and
+exits; it does not start Express.
+
+Set the cron service's Start Command to:
+
+```bash
+npm run build && npm run refresh:scheduled
+```
+
+Set its Cron Schedule to:
+
+```text
+0 1 * * *
+```
+
+Railway evaluates cron schedules in UTC, so this runs at 08:00 in
+`Asia/Ho_Chi_Minh` (UTC+7). The cron service needs the same `DATABASE_URL`,
+`FIRECRAWL_API_KEY`, `CIELO_ENTITIES_CSV`, and `DATA_DIR` values as the web
+service. If SQLite is used, mount the same persistent volume; Supabase is the
+safer shared-storage option for separate Railway services.

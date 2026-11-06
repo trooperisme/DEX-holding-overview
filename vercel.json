@@ -1,9 +1,12 @@
 {
   "buildCommand": "npm run build",
   "functions": {
+    "api/atlas-status.ts": {
+      "maxDuration": 10
+    },
     "api/index.ts": {
       "maxDuration": 300,
-      "includeFiles": "data/raw/*"
+      "includeFiles": "{data/raw,dashboard}/**"
     }
   },
   "redirects": [
@@ -15,8 +18,18 @@
   ],
   "rewrites": [
     {
+      "source": "/api/atlas-status",
+      "destination": "/api/atlas-status"
+    },
+    {
       "source": "/api/(.*)",
       "destination": "/api/index"
+    }
+  ],
+  "routes": [
+    {
+      "src": "^/dashboard(?:/.*)?$",
+      "dest": "/api/index"
     }
   ]
 }

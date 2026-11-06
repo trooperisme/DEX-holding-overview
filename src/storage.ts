@@ -14,6 +14,7 @@ import {
   TokenHolderRow,
   TokenOverviewRow,
   TokenScorePoint,
+  TrenchIndexSnapshot,
 } from "./types";
 
 function normalizeFavoriteEntityKeys(names: string[] = []): string[] {
@@ -142,10 +143,31 @@ function createSqliteStorage(cwd: string): StorageAdapter {
       updated_at TEXT NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS owner_favorite_entities (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      entity_key TEXT NOT NULL UNIQUE,
+      entity_name TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS trench_index_snapshots (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      day TEXT NOT NULL UNIQUE,
+      score REAL NOT NULL,
+      band TEXT NOT NULL,
+      pad_volume REAL,
+      tokens_launched REAL,
+      bot_volume REAL,
+      bot_fees REAL,
+      source_url TEXT NOT NULL,
+      fetched_at TEXT NOT NULL
+    );
+
     CREATE INDEX IF NOT EXISTS idx_entity_wallets_entity ON entity_wallets(entity_id, wallet_index);
     CREATE INDEX IF NOT EXISTS idx_raw_holdings_snapshot ON raw_holdings(snapshot_id, token_key, balance_usd DESC);
     CREATE INDEX IF NOT EXISTS idx_raw_holdings_token_history ON raw_holdings(token_key, snapshot_id, balance_usd DESC, entity_id);
     CREATE INDEX IF NOT EXISTS idx_snapshot_created ON holding_snapshots(created_at DESC, id DESC);
+    CREATE INDEX IF NOT EXISTS idx_trench_index_fetched ON trench_index_snapshots(fetched_at DESC, id DESC);
   `);
 
   ensureColumn("raw_holdings", "market_cap", "REAL");
@@ -153,6 +175,36 @@ function createSqliteStorage(cwd: string): StorageAdapter {
   ensureColumn("raw_holdings", "volume_24h", "REAL");
   ensureColumn("raw_holdings", "txns_24h", "REAL");
   ensureColumn("raw_holdings", "token_age_hours", "REAL");
+
+  const favoriteInsert = db.prepare(`
+    INSERT INTO owner_favorite_entities (entity_key, entity_name, created_at)
+    VALUES (?, ?, ?)
+    ON CONFLICT(entity_key) DO NOTHING
+  `);
+  const favoriteDelete = db.prepare("DELETE FROM owner_favorite_entities WHERE entity_key = ?");
+  const favoriteList = db.prepare(
+    "SELECT entity_name as entityName FROM owner_favorite_entities ORDER BY id ASC",
+  );
+  const getFavoriteEntityNames = (): string[] =>
+    (favoriteList.all() as Array<{ entityName: string }>).map((row) => row.entityName);
+
+  const latestTrenchIndex = db.prepare(`
+    SELECT id, day, score, band, pad_volume as padVolume, tokens_launched as tokensLaunched,
+           bot_volume as botVolume, bot_fees as botFees, source_url as sourceUrl, fetched_at as fetchedAt
+    FROM trench_index_snapshots ORDER BY fetched_at DESC, id DESC LIMIT 1
+  `);
+  const upsertTrenchIndex = db.prepare(`
+    INSERT INTO trench_index_snapshots (
+      day, score, band, pad_volume, tokens_launched, bot_volume, bot_fees, source_url, fetched_at
+    ) VALUES (
+      @day, @score, @band, @padVolume, @tokensLaunched, @botVolume, @botFees, @sourceUrl, @fetchedAt
+    ) ON CONFLICT(day) DO UPDATE SET
+      score = excluded.score, band = excluded.band, pad_volume = excluded.pad_volume,
+      tokens_launched = excluded.tokens_launched, bot_volume = excluded.bot_volume,
+      bot_fees = excluded.bot_fees, source_url = excluded.source_url, fetched_at = excluded.fetched_at
+    RETURNING id, day, score, band, pad_volume as padVolume, tokens_launched as tokensLaunched,
+              bot_volume as botVolume, bot_fees as botFees, source_url as sourceUrl, fetched_at as fetchedAt
+  `);
 
   const upsertEntity = db.prepare(`
     INSERT INTO entities (entity_name, source_url, resolved_label, link_type, created_at, updated_at)
@@ -535,6 +587,36 @@ function createSqliteStorage(cwd: string): StorageAdapter {
   return {
     close(): void {
       db.close();
+    },
+
+    getFavoriteEntityNames,
+
+    getLatestTrenchIndex(): TrenchIndexSnapshot | null {
+      return (latestTrenchIndex.get() as TrenchIndexSnapshot | undefined) || null;
+    },
+
+    upsertTrenchIndex(snapshot: Omit<TrenchIndexSnapshot, "id">): TrenchIndexSnapshot {
+      return upsertTrenchIndex.get(snapshot) as TrenchIndexSnapshot;
+    },
+
+    addFavoriteEntity(name: string): string[] {
+      favoriteInsert.run(name.toLowerCase(), name, new Date().toISOString());
+      return getFavoriteEntityNames();
+    },
+
+    removeFavoriteEntity(name: string): string[] {
+      favoriteDelete.run(name.toLowerCase());
+      return getFavoriteEntityNames();
+    },
+
+    mergeFavoriteEntities(names: string[]): string[] {
+      const merge = db.transaction(() => {
+        for (const name of names) {
+          favoriteInsert.run(name.toLowerCase(), name, new Date().toISOString());
+        }
+      });
+      merge();
+      return getFavoriteEntityNames();
     },
 
     replaceEntities,

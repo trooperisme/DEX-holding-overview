@@ -1,4 +1,5 @@
 import path from "node:path";
+import crypto from "node:crypto";
 import dotenv from "dotenv";
 import express from "express";
 import { createAuthRouter, createPasswordProtection } from "./auth";
@@ -9,6 +10,7 @@ import { withOpportunityScore } from "./scoring";
 import { getLatestUsableSnapshot } from "./snapshot-selection";
 import { isRunningSnapshotStale } from "./snapshot-reconciliation";
 import { createStorage } from "./storage";
+import { fetchTrenchIndex } from "./trench-index";
 import {
   SnapshotRecord,
   SnapshotStatus,
@@ -26,6 +28,57 @@ const refreshJobs = createRefreshJobManager(cwd);
 app.disable("x-powered-by");
 app.set("trust proxy", 1);
 app.use(createAuthRouter());
+
+function hasAtlasToken(req: express.Request): boolean {
+  const expected = String(process.env.ATLAS_STATUS_TOKEN || "").trim();
+  const authorization = String(req.get("authorization") || "");
+  const provided = authorization.startsWith("Bearer ") ? authorization.slice("Bearer ".length).trim() : "";
+  if (!expected || !provided) return false;
+  const expectedDigest = crypto.createHash("sha256").update(expected).digest();
+  const providedDigest = crypto.createHash("sha256").update(provided).digest();
+  return crypto.timingSafeEqual(expectedDigest, providedDigest);
+}
+
+function vietnamDay(value: string | null): string | null {
+  if (!value) return null;
+  const time = new Date(value).getTime();
+  if (!Number.isFinite(time)) return null;
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Ho_Chi_Minh",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date(time));
+}
+
+function todayInVietnam(): string {
+  return vietnamDay(new Date().toISOString()) || "";
+}
+
+app.get("/api/atlas-status", async (req, res) => {
+  if (!hasAtlasToken(req)) {
+    res.status(401).json({ product: "dex", snapshotState: "unavailable" });
+    return;
+  }
+
+  let storage: ReturnType<typeof createStorage> | null = null;
+  try {
+    storage = createStorage(cwd);
+    const snapshots = await storage.getSnapshotSummaries();
+    const latestSuccess = snapshots.find((snapshot) => snapshot.status === "success") || null;
+    const completedAt = latestSuccess?.finishedAt || latestSuccess?.createdAt || null;
+    res.set("Cache-Control", "no-store").json({
+      product: "dex",
+      snapshotState: vietnamDay(completedAt) === todayInVietnam() ? "fresh" : "missing",
+    });
+  } catch (error) {
+    console.error("Atlas status check failed", error instanceof Error ? error.message : "Unknown storage error");
+    res.status(503).set("Cache-Control", "no-store").json({ product: "dex", snapshotState: "unavailable" });
+  } finally {
+    await storage?.close();
+  }
+});
+
 app.get("/favicon.ico", (_req, res) => {
   res.status(204).end();
 });
@@ -50,23 +103,111 @@ app.get("/api/health", (_req, res) => {
   res.json({ ok: true, refreshRunning: Boolean(activeJob?.running), activeJob });
 });
 
-function sendServerError(res: express.Response, error: unknown): void {
-  res.status(500).json({ error: error instanceof Error ? error.message : "Unexpected server error" });
+function isFreshTrenchIndex(fetchedAt: string): boolean {
+  const fetchedAtMs = Date.parse(fetchedAt);
+  return Number.isFinite(fetchedAtMs) && Date.now() - fetchedAtMs < 6 * 60 * 60 * 1000;
 }
 
-function parseFavoriteEntities(value: unknown): string[] {
-  const raw = Array.isArray(value) ? value : [value];
-  const names = raw.flatMap((item) => {
-    if (item == null) return [];
-    const text = String(item).trim();
-    if (!text) return [];
-    try {
-      const parsed = JSON.parse(text);
-      if (Array.isArray(parsed)) return parsed.map((name) => String(name || ""));
-    } catch { /* A comma-separated input is also accepted. */ }
-    return text.split(",");
-  });
-  return [...new Set(names.map((name) => name.trim()).filter(Boolean))];
+app.get("/api/market-regime", async (_req, res) => {
+  const storage = createStorage(cwd);
+  try {
+    let regime = await storage.getLatestTrenchIndex();
+    let stale = Boolean(regime && !isFreshTrenchIndex(regime.fetchedAt));
+    if (!regime || stale) {
+      try {
+        regime = await storage.upsertTrenchIndex(await fetchTrenchIndex());
+        stale = false;
+      } catch (error) {
+        if (!regime) throw error;
+        console.warn("Trench Index refresh failed; returning the last saved regime", error instanceof Error ? error.message : "Unknown error");
+      }
+    }
+    res.set("Cache-Control", "private, no-store").json({ regime, stale });
+  } catch (error) {
+    sendServerError(res, error);
+  } finally {
+    await storage.close();
+  }
+});
+
+function parseFavoriteEntityName(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const name = value.trim();
+  return name && name.length <= 160 && !/[\u0000-\u001f\u007f]/.test(name) ? name : null;
+}
+
+function parseFavoriteEntityNames(value: unknown): string[] | null {
+  if (!Array.isArray(value) || value.length > 100) return null;
+  const unique = new Map<string, string>();
+  for (const valueName of value) {
+    const name = parseFavoriteEntityName(valueName);
+    if (!name) return null;
+    if (!unique.has(name.toLowerCase())) unique.set(name.toLowerCase(), name);
+  }
+  return [...unique.values()];
+}
+
+app.get("/api/favorite-entities", async (_req, res) => {
+  const storage = createStorage(cwd);
+  try {
+    res.set("Cache-Control", "no-store").json({ favoriteEntities: await storage.getFavoriteEntityNames() });
+  } catch (error) {
+    sendServerError(res, error);
+  } finally {
+    await storage.close();
+  }
+});
+
+app.post("/api/favorite-entities/merge", async (req, res) => {
+  const names = parseFavoriteEntityNames(req.body?.favoriteEntities);
+  if (!names) {
+    res.status(400).json({ error: "favoriteEntities must be an array of up to 100 valid names" });
+    return;
+  }
+  const storage = createStorage(cwd);
+  try {
+    res.set("Cache-Control", "no-store").json({ favoriteEntities: await storage.mergeFavoriteEntities(names) });
+  } catch (error) {
+    sendServerError(res, error);
+  } finally {
+    await storage.close();
+  }
+});
+
+app.post("/api/favorite-entities", async (req, res) => {
+  const name = parseFavoriteEntityName(req.body?.name);
+  if (!name) {
+    res.status(400).json({ error: "name must be a non-empty entity name of at most 160 characters" });
+    return;
+  }
+  const storage = createStorage(cwd);
+  try {
+    res.set("Cache-Control", "no-store").json({ favoriteEntities: await storage.addFavoriteEntity(name) });
+  } catch (error) {
+    sendServerError(res, error);
+  } finally {
+    await storage.close();
+  }
+});
+
+app.delete("/api/favorite-entities", async (req, res) => {
+  const name = parseFavoriteEntityName(req.body?.name);
+  if (!name) {
+    res.status(400).json({ error: "name must be a non-empty entity name of at most 160 characters" });
+    return;
+  }
+  const storage = createStorage(cwd);
+  try {
+    res.set("Cache-Control", "no-store").json({ favoriteEntities: await storage.removeFavoriteEntity(name) });
+  } catch (error) {
+    sendServerError(res, error);
+  } finally {
+    await storage.close();
+  }
+});
+
+function sendServerError(res: express.Response, error: unknown): void {
+  res.status(500).json({ error: error instanceof Error ? error.message : "Unexpected server error" });
 }
 
 function incompleteSnapshotStatus(snapshot: SnapshotRecord): SnapshotStatus {
@@ -172,7 +313,6 @@ app.get("/api/overview", async (req, res) => {
   const minLiquidityUsd = Number(req.query.minLiquidityUsd || 11111);
   const maxMarketCapUsdRaw = Number(req.query.maxMarketCapUsd || 0);
   const maxMarketCapUsd = Number.isFinite(maxMarketCapUsdRaw) && maxMarketCapUsdRaw > 0 ? maxMarketCapUsdRaw : null;
-  const favoriteEntities = parseFavoriteEntities(req.query.favoriteEntities);
   if (!Number.isFinite(snapshotId) || snapshotId <= 0) {
     res.status(400).json({ error: "snapshotId is required" });
     return;
@@ -180,8 +320,9 @@ app.get("/api/overview", async (req, res) => {
 
   const storage = createStorage(cwd);
   try {
+    const favoriteEntities = await storage.getFavoriteEntityNames();
     const rows = await storage.getOverview(snapshotId, minBalanceUsd, minSmwIn, minLiquidityUsd, maxMarketCapUsd, favoriteEntities);
-    res.json({
+    res.set("Cache-Control", "private, no-store").json({
       rows: rows.sort((left, right) => right.score - left.score || right.holdingsUsd - left.holdingsUsd),
     });
   } catch (error) {
@@ -219,7 +360,6 @@ app.get("/api/token-score-history", async (req, res) => {
   const historyLimit = Number.isFinite(requestedLimit) && requestedLimit > 0
     ? Math.min(100, Math.trunc(requestedLimit))
     : null;
-  const favoriteEntities = parseFavoriteEntities(req.query.favoriteEntities);
   if (!tokenKey) {
     res.status(400).json({ error: "tokenKey is required" });
     return;
@@ -227,7 +367,8 @@ app.get("/api/token-score-history", async (req, res) => {
 
   const storage = createStorage(cwd);
   try {
-    res.json({
+    const favoriteEntities = await storage.getFavoriteEntityNames();
+    res.set("Cache-Control", "private, no-store").json({
       rows: await storage.getTokenScoreHistory(tokenKey, minBalanceUsd, favoriteEntities, historyLimit),
     });
   } catch (error) {

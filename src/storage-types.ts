@@ -6,6 +6,7 @@ import {
   RawHoldingRecord,
   SnapshotRecord,
   SnapshotStatus,
+  TrenchIndexSnapshot,
   TokenBlacklistRecord,
   TokenHolderRow,
   TokenOverviewRow,
@@ -37,6 +38,10 @@ export type StorageResult<T> = T | Promise<T>;
 
 export type StorageAdapter = {
   close(): StorageResult<void>;
+  getFavoriteEntityNames(): StorageResult<string[]>;
+  addFavoriteEntity(name: string): StorageResult<string[]>;
+  removeFavoriteEntity(name: string): StorageResult<string[]>;
+  mergeFavoriteEntities(names: string[]): StorageResult<string[]>;
   replaceEntities(entities: ImportedEntity[]): StorageResult<void>;
   getEntities(): StorageResult<Array<EntityRecord & { wallets: EntityWalletRecord[] }>>;
   getEntitiesByLinks(sourceUrls: string[]): StorageResult<Array<EntityRecord & { wallets: EntityWalletRecord[] }>>;
@@ -54,6 +59,8 @@ export type StorageAdapter = {
   }): StorageResult<void>;
   getSnapshotSummaries(): StorageResult<SnapshotRecord[]>;
   getLatestSnapshot(): StorageResult<SnapshotRecord | null>;
+  getLatestTrenchIndex(): StorageResult<TrenchIndexSnapshot | null>;
+  upsertTrenchIndex(snapshot: Omit<TrenchIndexSnapshot, "id">): StorageResult<TrenchIndexSnapshot>;
   getSnapshotTokensForEnrichment(snapshotId: number, minBalanceUsd?: number, minSmwIn?: number): StorageResult<SnapshotTokenForEnrichment[]>;
   getOverview(
     snapshotId: number,

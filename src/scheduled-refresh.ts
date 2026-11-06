@@ -5,6 +5,8 @@ import {
   getRefreshQualityGateConfig,
 } from "./refresh-quality-gate";
 import { closePostgresPool } from "./storage-postgres";
+import { createStorage } from "./storage";
+import { fetchTrenchIndex } from "./trench-index";
 
 dotenv.config();
 
@@ -17,6 +19,16 @@ dotenv.config();
 export async function runScheduledRefresh(): Promise<void> {
   const startedAt = new Date().toISOString();
   console.log(`[scheduled-refresh] Starting full scan at ${startedAt}.`);
+
+  const storage = createStorage(process.cwd());
+  try {
+    const regime = await storage.upsertTrenchIndex(await fetchTrenchIndex());
+    console.log(
+      `[scheduled-refresh] Stored market regime ${regime.band} (${regime.score}) for ${regime.day}.`,
+    );
+  } finally {
+    await storage.close();
+  }
 
   const result = await runDexRefresh({
     cwd: process.cwd(),

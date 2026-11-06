@@ -11,11 +11,14 @@ import {
   TokenHolderRow,
   TokenOverviewRow,
   TokenScorePoint,
+  TrenchIndexSnapshot,
 } from "./types";
 import { SnapshotTokenForEnrichment, SnapshotUpdate, StorageAdapter } from "./storage-types";
 import { normalizeTokenName } from "./token-name";
 
 let sharedPool: Pool | null = null;
+let ownerFavoritesSchemaReady: Promise<void> | null = null;
+let trenchIndexSchemaReady: Promise<void> | null = null;
 
 export async function closePostgresPool(): Promise<void> {
   const pool = sharedPool;
@@ -67,6 +70,70 @@ async function withTransaction<T>(fn: (client: PoolClient) => Promise<T>): Promi
   } finally {
     client.release();
   }
+}
+
+async function ensureOwnerFavoritesTable(): Promise<void> {
+  if (!ownerFavoritesSchemaReady) {
+    ownerFavoritesSchemaReady = withTransaction(async (client) => {
+      await client.query("SELECT pg_advisory_xact_lock($1::bigint)", ["678910023450123456"]);
+      await client.query(
+        `CREATE TABLE IF NOT EXISTS ${table("owner_favorite_entities")} (
+           id bigint generated always as identity primary key,
+           entity_key text not null unique,
+           entity_name text not null,
+           created_at timestamptz not null default now()
+         )`,
+      );
+    }).catch((error) => {
+      ownerFavoritesSchemaReady = null;
+      throw error;
+    });
+  }
+  await ownerFavoritesSchemaReady;
+}
+
+async function ensureTrenchIndexTable(): Promise<void> {
+  if (!trenchIndexSchemaReady) {
+    trenchIndexSchemaReady = withTransaction(async (client) => {
+      await client.query("SELECT pg_advisory_xact_lock($1::bigint)", ["678910023450123457"]);
+      await client.query(
+        `CREATE TABLE IF NOT EXISTS ${table("trench_index_snapshots")} (
+           id bigint generated always as identity primary key,
+           day date not null unique,
+           score numeric not null,
+           band text not null,
+           pad_volume numeric,
+           tokens_launched numeric,
+           bot_volume numeric,
+           bot_fees numeric,
+           source_url text not null,
+           fetched_at timestamptz not null
+         )`,
+      );
+      await client.query(
+        `CREATE INDEX IF NOT EXISTS idx_trench_index_fetched ON ${table("trench_index_snapshots")} (fetched_at DESC, id DESC)`,
+      );
+    }).catch((error) => {
+      trenchIndexSchemaReady = null;
+      throw error;
+    });
+  }
+  await trenchIndexSchemaReady;
+}
+
+function mapTrenchIndex(row: any): TrenchIndexSnapshot {
+  return {
+    id: Number(row.id),
+    day: row.day instanceof Date ? row.day.toISOString().slice(0, 10) : String(row.day),
+    score: Number(row.score),
+    band: row.band,
+    padVolume: numberOrNull(row.pad_volume),
+    tokensLaunched: numberOrNull(row.tokens_launched),
+    botVolume: numberOrNull(row.bot_volume),
+    botFees: numberOrNull(row.bot_fees),
+    sourceUrl: String(row.source_url),
+    fetchedAt: row.fetched_at instanceof Date ? row.fetched_at.toISOString() : String(row.fetched_at),
+  };
 }
 
 function numberOrNull(value: unknown): number | null {
@@ -301,9 +368,76 @@ function mapOverview(row: any): TokenOverviewRow {
 }
 
 export function createPostgresStorage(): StorageAdapter {
+  const getFavoriteEntityNames = async (): Promise<string[]> => {
+    await ensureOwnerFavoritesTable();
+    const result = await getPool().query<{ entity_name: string }>(
+      `SELECT entity_name FROM ${table("owner_favorite_entities")} ORDER BY id ASC`,
+    );
+    return result.rows.map((row) => row.entity_name);
+  };
+
   return {
     close(): void {
       // The shared pool is intentionally reused across Vercel function invocations.
+    },
+
+    getFavoriteEntityNames,
+
+    async getLatestTrenchIndex(): Promise<TrenchIndexSnapshot | null> {
+      await ensureTrenchIndexTable();
+      const result = await getPool().query(
+        `SELECT * FROM ${table("trench_index_snapshots")} ORDER BY fetched_at DESC, id DESC LIMIT 1`,
+      );
+      return result.rows[0] ? mapTrenchIndex(result.rows[0]) : null;
+    },
+
+    async upsertTrenchIndex(snapshot: Omit<TrenchIndexSnapshot, "id">): Promise<TrenchIndexSnapshot> {
+      await ensureTrenchIndexTable();
+      const result = await getPool().query(
+        `INSERT INTO ${table("trench_index_snapshots")} (
+           day, score, band, pad_volume, tokens_launched, bot_volume, bot_fees, source_url, fetched_at
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+         ON CONFLICT (day) DO UPDATE SET
+           score = EXCLUDED.score, band = EXCLUDED.band, pad_volume = EXCLUDED.pad_volume,
+           tokens_launched = EXCLUDED.tokens_launched, bot_volume = EXCLUDED.bot_volume,
+           bot_fees = EXCLUDED.bot_fees, source_url = EXCLUDED.source_url, fetched_at = EXCLUDED.fetched_at
+         RETURNING *`,
+        [snapshot.day, snapshot.score, snapshot.band, snapshot.padVolume, snapshot.tokensLaunched, snapshot.botVolume, snapshot.botFees, snapshot.sourceUrl, snapshot.fetchedAt],
+      );
+      return mapTrenchIndex(result.rows[0]);
+    },
+
+    async addFavoriteEntity(name: string): Promise<string[]> {
+      await ensureOwnerFavoritesTable();
+      await getPool().query(
+        `INSERT INTO ${table("owner_favorite_entities")} (entity_key, entity_name)
+         VALUES ($1, $2) ON CONFLICT (entity_key) DO NOTHING`,
+        [name.toLowerCase(), name],
+      );
+      return getFavoriteEntityNames();
+    },
+
+    async removeFavoriteEntity(name: string): Promise<string[]> {
+      await ensureOwnerFavoritesTable();
+      await getPool().query(
+        `DELETE FROM ${table("owner_favorite_entities")} WHERE entity_key = $1`,
+        [name.toLowerCase()],
+      );
+      return getFavoriteEntityNames();
+    },
+
+    async mergeFavoriteEntities(names: string[]): Promise<string[]> {
+      await ensureOwnerFavoritesTable();
+      await withTransaction(async (client) => {
+        for (const name of names) {
+          await client.query(
+            `INSERT INTO ${table("owner_favorite_entities")} (entity_key, entity_name)
+             VALUES ($1, $2) ON CONFLICT (entity_key) DO NOTHING`,
+            [name.toLowerCase(), name],
+          );
+        }
+      });
+      return getFavoriteEntityNames();
     },
 
     async replaceEntities(entities: ImportedEntity[]): Promise<void> {
@@ -719,7 +853,7 @@ export function createPostgresStorage(): StorageAdapter {
       favoriteEntityNames: string[] = [],
     ): Promise<TokenOverviewRow[]> {
       const favoriteEntityKeys = normalizeFavoriteEntityKeys(favoriteEntityNames);
-      const result = await getPool().query(
+      const overviewQuery = getPool().query(
         `WITH canonical_holdings AS (
            SELECT
              rh.token_key,
@@ -809,19 +943,22 @@ export function createPostgresStorage(): StorageAdapter {
          ORDER BY tr.smw_in DESC, tr.holdings_usd DESC, tr.token_symbol ASC`,
         [snapshotId, minBalanceUsd, minSmwIn, minLiquidityUsd, maxMarketCapUsd, favoriteEntityKeys],
       );
-      const convictionByToken = await getEntityConvictionByToken(snapshotId, minBalanceUsd);
+      const convictionQuery = getEntityConvictionByToken(snapshotId, minBalanceUsd);
+      const snapshotQuery = getPool().query(
+        `SELECT COALESCE(finished_at, created_at) as at FROM ${table("holding_snapshots")} WHERE id = $1`,
+        [snapshotId],
+      );
+      const previousQuery = getPreviousScoreSamples(snapshotId, minBalanceUsd, favoriteEntityKeys);
+      const [result, convictionByToken, snapshotResult, previousByToken] = await Promise.all([
+        overviewQuery, convictionQuery, snapshotQuery, previousQuery,
+      ]);
       const mappedRows = result.rows.map((row) => ({
         ...mapOverview(row),
         entityConviction: convictionByToken.get(row.token_key) || 1,
       }));
-      const snapshotResult = await getPool().query(
-        `SELECT COALESCE(finished_at, created_at) as at FROM ${table("holding_snapshots")} WHERE id = $1`,
-        [snapshotId],
-      );
       const currentAt = snapshotResult.rows[0]?.at instanceof Date
         ? snapshotResult.rows[0].at.toISOString()
         : String(snapshotResult.rows[0]?.at || new Date().toISOString());
-      const previousByToken = await getPreviousScoreSamples(snapshotId, minBalanceUsd, favoriteEntityKeys);
       return mappedRows.map((row) => {
         const previous = previousByToken.get(row.tokenKey) || [];
         const context: ScoreContext = {
