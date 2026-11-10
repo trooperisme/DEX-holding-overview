@@ -35,6 +35,7 @@ export type CieloAdaptiveConfig = {
   minConcurrency: number;
   maxConcurrency: number;
   successStreakToIncrease: number;
+  maxEntityAttempts: number;
   entityRetryBaseDelayMs: number;
   entityRetryMaxDelayMs: number;
 };
@@ -352,6 +353,7 @@ export async function runHoldingSnapshotEntities(options: {
       minConcurrency: 1,
       maxConcurrency: Math.max(1, options.concurrency),
       successStreakToIncrease: 5,
+      maxEntityAttempts: 3,
       entityRetryBaseDelayMs: 30_000,
       entityRetryMaxDelayMs: 300_000,
     };
@@ -434,7 +436,7 @@ export async function runHoldingSnapshotEntities(options: {
                 firecrawlApiKey: options.firecrawlApiKey,
                 signal: options.signal,
                 callbacks: options.callbacks,
-                shouldRetryError: () => true,
+                shouldRetryError: () => attempt < config.maxEntityAttempts,
               });
 
               if (entityResult.retryable) {

@@ -188,6 +188,7 @@ export async function runDexRefresh(options: {
         minConcurrency: cieloConfig.minConcurrency,
         maxConcurrency: Math.max(1, Math.min(entities.length, cieloConfig.maxConcurrency)),
         successStreakToIncrease: cieloConfig.successStreakToIncrease,
+        maxEntityAttempts: cieloConfig.maxEntityAttempts,
         entityRetryBaseDelayMs: cieloConfig.entityRetryBaseDelayMs,
         entityRetryMaxDelayMs: cieloConfig.entityRetryMaxDelayMs,
       },

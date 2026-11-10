@@ -23,6 +23,7 @@ export function getCieloProviderConfig() {
     minConcurrency,
     maxConcurrency,
     successStreakToIncrease: Math.max(1, Math.trunc(numberFromEnv("CIELO_FIRECRAWL_SUCCESS_STREAK_TO_INCREASE", 5))),
+    maxEntityAttempts: Math.max(1, Math.trunc(numberFromEnv("CIELO_FIRECRAWL_ENTITY_MAX_ATTEMPTS", 3))),
     entityRetryBaseDelayMs: Math.max(0, Math.trunc(numberFromEnv(
       "CIELO_FIRECRAWL_ENTITY_RETRY_BASE_MS",
       numberFromEnv("CIELO_FIRECRAWL_RATE_LIMIT_COOLDOWN_MS", 30000),

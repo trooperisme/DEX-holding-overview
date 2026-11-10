@@ -116,6 +116,7 @@ test("runHoldingSnapshotEntities retries a failed Cielo bundle until the full ba
       minConcurrency: 1,
       maxConcurrency: 3,
       successStreakToIncrease: 5,
+      maxEntityAttempts: 3,
       entityRetryBaseDelayMs: 0,
       entityRetryMaxDelayMs: 10,
     },
@@ -227,7 +228,7 @@ test("runHoldingSnapshotEntities flushes Cielo rows after each entity while the 
   assert.equal(fake.rawWrites.length, 2);
 });
 
-test("runHoldingSnapshotEntities adapts Cielo concurrency and retries transient rate limits", async () => {
+test("runHoldingSnapshotEntities retries a transient error and succeeds within the entity attempt limit", async () => {
   const fake = createFakeStorage();
   const started: string[] = [];
   const logs: RefreshLogEntry[] = [];
@@ -252,6 +253,7 @@ test("runHoldingSnapshotEntities adapts Cielo concurrency and retries transient 
       minConcurrency: 1,
       maxConcurrency: 3,
       successStreakToIncrease: 1,
+      maxEntityAttempts: 3,
       entityRetryBaseDelayMs: 0,
       entityRetryMaxDelayMs: 10,
     },
@@ -261,9 +263,7 @@ test("runHoldingSnapshotEntities adapts Cielo concurrency and retries transient 
         started.push(bundleId);
         const attempt = (attemptsByBundle.get(bundleId) || 0) + 1;
         attemptsByBundle.set(bundleId, attempt);
-        if (bundleId === "303" && attempt <= 4) {
-          throw new Error(attempt < 3 ? "Firecrawl Cielo scrape rate-limited (429)" : "Bundle not found");
-        }
+        if (bundleId === "303" && attempt <= 2) throw new Error("Firecrawl Cielo scrape rate-limited (429)");
         return {
           balances: [tokenBalance({ tokenSymbol: `T${bundleId}`, tokenName: `Token ${bundleId}`, balanceUsd: 10 })],
           metadata: {
@@ -282,11 +282,39 @@ test("runHoldingSnapshotEntities adapts Cielo concurrency and retries transient 
   });
 
   assert.deepEqual(started.slice(0, 2), ["301", "302"]);
-  assert.equal(attemptsByBundle.get("303"), 5);
+  assert.equal(attemptsByBundle.get("303"), 3);
   assert.equal(result.entitiesCompleted, 3);
   assert.equal(result.entitiesFailed, 0);
   assert.equal(result.totalRows, 3);
   assert.equal(fake.rawWrites.length, 3);
   assert.ok(logs.some((entry) => entry.message.includes("Cielo adaptive concurrency increased to 3")));
   assert.ok(logs.some((entry) => entry.message.includes("Cielo adaptive concurrency reduced to 1")));
+});
+
+test("runHoldingSnapshotEntities fails an entity after its configured maximum attempts", async () => {
+  const fake = createFakeStorage();
+  let attempts = 0;
+  const alwaysFailingEntity = {
+    ...entity([]), id: 9, entityName: "Always failing",
+    sourceUrl: "https://app.cielo.finance/bundles/999/portfolio", resolvedLabel: "Always failing",
+  };
+  const result = await runHoldingSnapshotEntities({
+    storage: fake.storage, snapshotId: 47, entities: [alwaysFailingEntity], concurrency: 1,
+    firecrawlApiKey: "firecrawl-key", callbacks: { onLog: () => undefined },
+    cieloAdaptiveConfig: {
+      initialConcurrency: 1, minConcurrency: 1, maxConcurrency: 1,
+      successStreakToIncrease: 1, maxEntityAttempts: 3,
+      entityRetryBaseDelayMs: 0, entityRetryMaxDelayMs: 10,
+    },
+    sourceAdapters: {
+      async fetchCieloPortfolio() { attempts += 1; throw new Error("Bundle not found"); },
+    },
+  });
+
+  assert.equal(attempts, 3);
+  assert.equal(result.entitiesCompleted, 0);
+  assert.equal(result.entitiesFailed, 1);
+  assert.equal(result.totalRows, 0);
+  assert.equal(fake.fetchRunUpdates.filter((item) => item.update.status === "failed").length, 1);
+  assert.equal(fake.fetchRunUpdates.filter((item) => item.update.status === "canceled").length, 2);
 });
