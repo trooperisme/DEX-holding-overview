@@ -270,12 +270,13 @@ function fmtTokenAmount(value) {
   return numeric.toLocaleString("en-US", { maximumSignificantDigits: 5 });
 }
 
-function fmtScore(value) {
+function fmtScore(value, includeUnits = true) {
   const numeric = Number(value || 0);
   if (!Number.isFinite(numeric) || numeric <= 0) return "—";
-  if (numeric >= 1_000_000) return `${(numeric / 1_000_000).toFixed(1)}M`;
-  if (numeric >= 1_000) return `${(numeric / 1_000).toFixed(1)}k`;
-  return Math.round(numeric).toLocaleString("en-US");
+  const formatted = numeric >= 1_000_000 ? `${(numeric / 1_000_000).toFixed(1)}M`
+    : numeric >= 1_000 ? `${(numeric / 1_000).toFixed(1)}k`
+      : Math.round(numeric).toLocaleString("en-US");
+  return includeUnits ? `${formatted} pts` : formatted;
 }
 
 function getMetricMax(rows, key) {
@@ -360,100 +361,58 @@ function safeNumber(value, fallback = 0) {
   return Number.isFinite(numeric) ? numeric : fallback;
 }
 
-function smwBreadthMultiplier(smwInRaw) {
-  const smwIn = safeNumber(smwInRaw, 0);
-  if (smwIn <= 0) return 0.75;
-  if (smwIn === 1) return 0.9;
-  if (smwIn === 2) return 1.15;
-  if (smwIn === 3) return 1.35;
-  if (smwIn <= 5) return 1.55;
-  if (smwIn <= 10) return 1.8;
-  if (smwIn <= 20) return 2.05;
-  return 2.3;
-}
-
-function holdingsToMarketCapFootprintMultiplier(holdingsUsdRaw, marketCapRaw) {
-  const holdingsUsd = safeNumber(holdingsUsdRaw, 0);
-  const marketCap = safeNumber(marketCapRaw, 0);
-  if (holdingsUsd <= 0 || marketCap <= 0) return 1.0;
-  const pct = (holdingsUsd / marketCap) * 100;
-  if (pct < 0.01) return 0.8;
-  if (pct < 0.05) return 0.9;
-  if (pct < 0.25) return 1.0;
-  if (pct < 1.0) return 1.15;
-  if (pct < 3.0) return 1.35;
-  if (pct < 8.0) return 1.5;
-  if (pct < 15.0) return 1.25;
-  return 0.9;
-}
-
-function marketCapAsymmetryMultiplier(marketCapRaw) {
-  const marketCap = safeNumber(marketCapRaw, 0);
-  if (marketCap <= 0) return 0.85;
-  if (marketCap < 100_000) return 0.7;
-  if (marketCap < 1_000_000) return 1.05;
-  if (marketCap < 10_000_000) return 1.35;
-  if (marketCap < 50_000_000) return 1.25;
-  if (marketCap < 200_000_000) return 1.05;
-  if (marketCap < 1_000_000_000) return 0.75;
-  return 0.45;
-}
-
-function tokenAgeMultiplier(tokenAgeHoursRaw) {
-  const hours = safeNumber(tokenAgeHoursRaw, NaN);
-  if (!Number.isFinite(hours)) return 0.95;
-  const days = hours / 24;
-  if (days < 1) return 0.7;
-  if (days < 7) return 0.85;
-  if (days < 30) return 1.0;
-  if (days < 180) return 1.1;
-  if (days < 730) return 1.0;
-  return 0.85;
-}
-
-function scoreFactors(point) {
-  return {
-    holdingsUsd: safeNumber(point.holdingsUsd, 0),
-    tokenAmount: safeNumber(point.tokenAmount, 0),
-    smwBreadth: smwBreadthMultiplier(point.smwIn),
-    footprint: holdingsToMarketCapFootprintMultiplier(point.holdingsUsd, point.marketCap),
-    asymmetry: marketCapAsymmetryMultiplier(point.marketCap),
-    age: tokenAgeMultiplier(point.tokenAgeHours),
-  };
-}
-
 function factorRows(prev, current) {
   if (!prev) return [];
-  const currFactors = scoreFactors(current);
-  const prevFactors = scoreFactors(prev);
   const rows = [
     {
-      label: "Holdings",
+      label: "Tokens held",
       before: fmtTokenAmount(prev.tokenAmount),
       after: fmtTokenAmount(current.tokenAmount),
-      beforeValue: prevFactors.tokenAmount,
-      afterValue: currFactors.tokenAmount,
+      beforeValue: safeNumber(prev.tokenAmount, 0),
+      afterValue: safeNumber(current.tokenAmount, 0),
     },
     {
-      label: "Marketcap",
-      before: `${fmtUsdOrDash(prev.marketCap)} (${prevFactors.footprint.toFixed(2)}x)`,
-      after: `${fmtUsdOrDash(current.marketCap)} (${currFactors.footprint.toFixed(2)}x)`,
-      beforeValue: prevFactors.footprint,
-      afterValue: currFactors.footprint,
+      label: "Holdings (USD)",
+      before: fmtUsd(prev.holdingsUsd),
+      after: fmtUsd(current.holdingsUsd),
+      beforeValue: safeNumber(prev.holdingsUsd, 0),
+      afterValue: safeNumber(current.holdingsUsd, 0),
+    },
+    {
+      label: "Holders",
+      before: String(safeNumber(prev.smwIn, 0)),
+      after: String(safeNumber(current.smwIn, 0)),
+      beforeValue: safeNumber(prev.smwIn, 0),
+      afterValue: safeNumber(current.smwIn, 0),
+    },
+    {
+      label: "Favorite holders",
+      before: String(safeNumber(prev.favoriteEntityCount, 0)),
+      after: String(safeNumber(current.favoriteEntityCount, 0)),
+      beforeValue: safeNumber(prev.favoriteEntityCount, 0),
+      afterValue: safeNumber(current.favoriteEntityCount, 0),
+    },
+    {
+      label: "Market cap (USD)",
+      before: fmtUsdOrDash(prev.marketCap),
+      after: fmtUsdOrDash(current.marketCap),
+      beforeValue: prev.marketCap == null ? null : safeNumber(prev.marketCap, 0),
+      afterValue: current.marketCap == null ? null : safeNumber(current.marketCap, 0),
     },
   ];
 
   return rows
     .map((row) => {
-      const delta = row.afterValue / Math.max(0.0001, row.beforeValue);
-      const deltaPct = (delta - 1) * 100;
+      const deltaPct = row.beforeValue == null || row.afterValue == null || row.beforeValue === 0
+        ? null
+        : ((row.afterValue / row.beforeValue) - 1) * 100;
       return {
         ...row,
         deltaPct,
-        direction: deltaPct > 0 ? "positive" : deltaPct < 0 ? "negative" : "",
+        direction: deltaPct == null ? "" : deltaPct > 0 ? "positive" : deltaPct < 0 ? "negative" : "",
       };
     })
-    .sort((a, b) => Math.abs(b.deltaPct) - Math.abs(a.deltaPct));
+    .sort((a, b) => (b.deltaPct == null ? -1 : Math.abs(b.deltaPct)) - (a.deltaPct == null ? -1 : Math.abs(a.deltaPct)));
 }
 
 function setBanner(message, tone = "warning") {
@@ -838,7 +797,7 @@ function buildScoreChart(points, tokenKey) {
           const y = yFor(tick);
           return `
             <line class="score-chart__grid" x1="${padding.left}" y1="${y.toFixed(2)}" x2="${padding.left + chartWidth}" y2="${y.toFixed(2)}"></line>
-            <text class="score-chart__label" x="${padding.left - 14}" y="${(y + 4).toFixed(2)}" text-anchor="end">${escapeHtml(fmtScore(tick))}</text>
+            <text class="score-chart__label" x="${padding.left - 14}" y="${(y + 4).toFixed(2)}" text-anchor="end">${escapeHtml(fmtScore(tick, false))}</text>
           `;
         })
         .join("")}
@@ -895,7 +854,7 @@ function buildDriverExplanation(previous, latest) {
       <div class="trend-explain__header">
         <div>
           <h4>What moved</h4>
-          <p>Latest snapshot versus previous snapshot. Ranked by estimated scoring impact.</p>
+          <p>Raw changes between snapshots, ordered by magnitude. Other inputs can also change the attention score.</p>
         </div>
         <span>#${escapeHtml(previous.snapshotId)} → #${escapeHtml(latest.snapshotId)}</span>
       </div>
@@ -955,7 +914,7 @@ function buildScoreTrendPanel(tokenKey) {
       <div class="trend-panel__header">
         <div>
           <h3>Score Trend</h3>
-          <p>Showing ${visiblePoints.length} of ${points.length} snapshot point${points.length === 1 ? "" : "s"} · manual refresh history</p>
+          <p>Showing ${visiblePoints.length} of ${points.length} snapshot point${points.length === 1 ? "" : "s"} · all points recalculated with current ${escapeHtml(latest.scoreVersion || "scoring")} rules</p>
         </div>
         <div class="trend-stats">
           <span>${escapeHtml(fmtScore(latest.score))}</span>
@@ -1127,7 +1086,7 @@ function renderTableDetailRail() {
       <span>Detail availability</span>
       <p>${escapeHtml(holderState)} · ${escapeHtml(trendState)}</p>
     </div>
-    <p class="table-detail-rail__note">Open the selected row below for the full holders list and score trend.</p>
+    <p class="table-detail-rail__note">${escapeHtml(row.scoreVersion || "Current method")} attention points are relative, not USD.${row.smwIn <= 1 && row.holdingsUsd < 10_000 ? " One holder below $10k is limited to 75k points." : ""} Open the row for holders and score trend.</p>
   `;
 }
 

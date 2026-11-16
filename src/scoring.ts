@@ -1,7 +1,8 @@
 import { TokenOverviewRow } from "./types";
 
-export const SCORE_VERSION = "v2";
+export const SCORE_VERSION = "v3";
 export const SCORE_CAP = 10_000_000;
+export const SINGLE_SMALL_HOLDER_SCORE_CAP = 75_000;
 
 export type ScoreHistorySample = {
   tokenAmount: number;
@@ -32,42 +33,53 @@ function safeNumber(value: unknown, fallback = 0): number {
   return Number.isFinite(n) ? n : fallback;
 }
 
-function holdingAttentionFloor(holdingsUsdRaw: unknown): number {
-  // Tracked capital is a first-order attention signal. Missing market data
-  // must not make a token with a large verified position disappear from the
-  // attention lanes; cap it at the global score ceiling so the score remains
-  // bounded and comparable with the other structural signals.
-  return Math.min(SCORE_CAP, Math.round(Math.max(0, safeNumber(holdingsUsdRaw, 0))));
+function capForHoldingEvidence(row: ScoreInput, score: number): number {
+  // A single sub-$10k position cannot be promoted into the top attention lanes
+  // by a favorable market quote or a short-lived momentum spike.
+  const evidenceCap = safeNumber(row.smwIn, 0) <= 1 && safeNumber(row.holdingsUsd, 0) < 10_000
+    ? SINGLE_SMALL_HOLDER_SCORE_CAP
+    : SCORE_CAP;
+  return Math.min(evidenceCap, Math.max(0, Math.round(score)));
 }
 
-function regimeAnchor(marketCapRaw: unknown): number {
+function holdingAttentionFloor(holdingsUsdRaw: unknown, smwInRaw: unknown): number {
+  // A single huge balance can be a passive position or bad source data. Keep
+  // capital visible without allowing raw USD value to set the entire ranking.
+  const holdingsUsd = Math.max(0, safeNumber(holdingsUsdRaw, 0));
+  const breadthEvidence = Math.min(1, Math.max(0, safeNumber(smwInRaw, 0)) / 3);
+  return Math.min(500_000, Math.round(Math.sqrt(holdingsUsd * 100_000) * breadthEvidence));
+}
+
+function marketCapUpsideMultiplier(marketCapRaw: unknown): number {
   const marketCap = safeNumber(marketCapRaw, 0);
-  if (marketCap <= 0) return 20_000;
-  if (marketCap < 100_000) return 15_000;
-  if (marketCap < 1_000_000) return 30_000;
-  if (marketCap < 10_000_000) return 50_000;
-  if (marketCap < 50_000_000) return 70_000;
-  if (marketCap < 200_000_000) return 200_000;
-  if (marketCap < 1_000_000_000) return 1_000_000;
-  return 2_000_000;
+  // Unknown cap is uncertainty, not proof of microcap upside. Tiny quoted caps
+  // are also easy to manipulate, so they need more than a cheap quote to rank.
+  if (marketCap <= 0) return 0.8;
+  if (marketCap < 100_000) return 0.4;
+  if (marketCap < 1_000_000) return 1.2;
+  if (marketCap < 10_000_000) return 2;
+  if (marketCap < 50_000_000) return 2.3;
+  if (marketCap < 200_000_000) return 1.5;
+  if (marketCap < 1_000_000_000) return 0.55;
+  return 0.3;
 }
 
 function breadthMultiplier(smwInRaw: unknown): number {
   const smwIn = safeNumber(smwInRaw, 0);
-  if (smwIn <= 1) return 0.8;
-  if (smwIn === 2) return 1;
-  if (smwIn === 3) return 1.2;
-  if (smwIn <= 5) return 1.35;
-  if (smwIn <= 10) return 1.5;
-  return 1.7;
+  if (smwIn <= 1) return 0.55;
+  if (smwIn === 2) return 0.9;
+  if (smwIn === 3) return 1.3;
+  if (smwIn <= 5) return 1.8;
+  if (smwIn <= 10) return 2.2;
+  return 2.5;
 }
 
 function favoriteConvergence(countRaw: unknown): number {
   const count = Math.max(0, Math.trunc(safeNumber(countRaw, 0)));
-  if (count === 1) return 1.5;
-  if (count === 2) return 2.5;
-  if (count === 3) return 4;
-  if (count >= 4) return 5;
+  if (count === 1) return 1.35;
+  if (count === 2) return 1.8;
+  if (count === 3) return 2.4;
+  if (count >= 4) return 2.8;
   return 1;
 }
 
@@ -89,7 +101,7 @@ function footprintMultiplier(holdingsUsdRaw: unknown, marketCapRaw: unknown): nu
 
 function ageMultiplier(tokenAgeHoursRaw: unknown, marketCapRaw: unknown): number {
   const hours = safeNumber(tokenAgeHoursRaw, NaN);
-  if (!Number.isFinite(hours)) return 0.95;
+  if (!Number.isFinite(hours)) return 1;
   const days = hours / 24;
   const established = safeNumber(marketCapRaw, 0) >= 200_000_000;
   if (established) {
@@ -106,7 +118,7 @@ function ageMultiplier(tokenAgeHoursRaw: unknown, marketCapRaw: unknown): number
 
 function liquidityMultiplier(valueRaw: unknown): number {
   const value = safeNumber(valueRaw, NaN);
-  if (!Number.isFinite(value)) return 0.85;
+  if (!Number.isFinite(value)) return 1;
   if (value < 25_000) return 0.8;
   if (value < 100_000) return 1;
   if (value < 500_000) return 1.1;
@@ -116,7 +128,7 @@ function liquidityMultiplier(valueRaw: unknown): number {
 
 function volumeMultiplier(valueRaw: unknown): number {
   const value = safeNumber(valueRaw, NaN);
-  if (!Number.isFinite(value)) return 0.9;
+  if (!Number.isFinite(value)) return 1;
   if (value < 10_000) return 0.85;
   if (value < 100_000) return 0.95;
   if (value < 1_000_000) return 1.05;
@@ -124,27 +136,17 @@ function volumeMultiplier(valueRaw: unknown): number {
   return 1.2;
 }
 
-function evidenceMultiplier(holdingsUsdRaw: unknown, favoriteCountRaw: unknown, marketCapRaw: unknown): number {
+function capitalEvidenceMultiplier(holdingsUsdRaw: unknown): number {
   const holdingsUsd = safeNumber(holdingsUsdRaw, 0);
-  let multiplier = holdingsUsd < 250 ? 0.02
-    : holdingsUsd < 1_000 ? 0.05
-      : holdingsUsd < 2_500 ? 0.1
-        : holdingsUsd < 10_000 ? 0.2
-          : holdingsUsd < 50_000 ? 0.4
-            : holdingsUsd < 250_000 ? 0.65
-              : holdingsUsd < 1_000_000 ? 0.85
-                : 1;
-
-  const favoriteCount = Math.max(0, Math.trunc(safeNumber(favoriteCountRaw, 0)));
-  if (favoriteCount === 1) multiplier = Math.max(multiplier, 0.15);
-  if (favoriteCount === 2) multiplier = Math.max(multiplier, 0.35);
-  if (favoriteCount === 3) multiplier = Math.max(multiplier, 0.6);
-  if (favoriteCount >= 4) multiplier = Math.max(multiplier, 0.75);
-
-  // A bluechip's structural lane is about capacity, not whether its current
-  // snapshot happens to have a small tracked-wallet position.
-  if (safeNumber(marketCapRaw, 0) >= 200_000_000) multiplier = Math.max(multiplier, 0.75);
-  return multiplier;
+  if (holdingsUsd < 250) return 0.015;
+  if (holdingsUsd < 1_000) return 0.06;
+  if (holdingsUsd < 2_500) return 0.12;
+  if (holdingsUsd < 10_000) return 0.35;
+  if (holdingsUsd < 25_000) return 0.6;
+  if (holdingsUsd < 50_000) return 0.85;
+  if (holdingsUsd < 100_000) return 1.1;
+  if (holdingsUsd < 250_000) return 1.3;
+  return 1.5;
 }
 
 function estimateMomentum(row: ScoreInput, context: ScoreContext): number {
@@ -194,21 +196,18 @@ export function computeStructuralScore(
   row: ScoreInput & { entityConviction?: number },
 ): number {
   const conviction = clamp(safeNumber(row.entityConviction, 1), 0.7, 2);
-  const structural = regimeAnchor(row.marketCap)
+  const structural = 160_000
     * conviction
+    * capitalEvidenceMultiplier(row.holdingsUsd)
     * favoriteConvergence(row.favoriteEntityCount)
     * breadthMultiplier(row.smwIn)
+    * marketCapUpsideMultiplier(row.marketCap)
     * ageMultiplier(row.tokenAgeHours, row.marketCap)
     * footprintMultiplier(row.holdingsUsd, row.marketCap)
     * liquidityMultiplier(row.liquidityUsd)
-    * volumeMultiplier(row.volume24h)
-    * evidenceMultiplier(row.holdingsUsd, row.favoriteEntityCount, row.marketCap);
+    * volumeMultiplier(row.volume24h);
 
-  const protectedBluechipFloor = safeNumber(row.marketCap, 0) >= 200_000_000 ? 1_000_000 : 0;
-  return Math.min(
-    SCORE_CAP,
-    Math.round(Math.max(protectedBluechipFloor, holdingAttentionFloor(row.holdingsUsd), structural)),
-  );
+  return capForHoldingEvidence(row, Math.max(holdingAttentionFloor(row.holdingsUsd, row.smwIn), structural));
 }
 
 export function computeOpportunityScore(
@@ -216,7 +215,7 @@ export function computeOpportunityScore(
   context: ScoreContext = {},
 ): number {
   const structural = computeStructuralScore(row);
-  return Math.min(SCORE_CAP, Math.round(structural * (1 + estimateMomentum(row, context))));
+  return capForHoldingEvidence(row, structural * (1 + estimateMomentum(row, context)));
 }
 
 export function favoriteScoreMultiplier(countRaw: unknown): number {
@@ -249,6 +248,6 @@ export function withOpportunityScore<T extends Omit<TokenOverviewRow, "score">>(
     momentumPct: Math.round(momentumBoost * 1000) / 10,
     scoreVersion: SCORE_VERSION,
     favoriteScoreMultiplier: favoriteScoreMultiplier(favoriteEntityCount),
-    score: Math.min(SCORE_CAP, Math.round(structuralScore * (1 + momentumBoost))),
+    score: capForHoldingEvidence(row, structuralScore * (1 + momentumBoost)),
   };
 }

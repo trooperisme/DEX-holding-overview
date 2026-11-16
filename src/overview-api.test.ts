@@ -133,7 +133,7 @@ test("overview API applies favorite entity scoring", async () => {
       assert.equal(payload.rows[0].tokenSymbol, "FAV");
       assert.equal(payload.rows[0].favoriteEntityCount, 1);
       assert.deepEqual(payload.rows[0].favoriteEntityNames, ["Crypto Andrew"]);
-      assert.equal(payload.rows[0].favoriteScoreMultiplier, 1.5);
+      assert.equal(payload.rows[0].favoriteScoreMultiplier, 1.35);
       assert.ok(payload.rows[0].score >= payload.rows[0].baseScore);
       assert.ok(Number.isFinite(payload.rows[0].score));
 
