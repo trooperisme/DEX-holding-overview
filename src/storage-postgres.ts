@@ -1060,7 +1060,7 @@ export function createPostgresStorage(): StorageAdapter {
            AND hs.status IN ('success', 'partial')
            AND ($4::bigint IS NULL OR hs.id <= $4)
          GROUP BY hs.id, ch.token_key
-         ORDER BY COALESCE(hs.finished_at, hs.created_at) ${historyOrder}, hs.id ${historyOrder}
+         ORDER BY hs.id ${historyOrder}
          ${historyLimitClause}`,
         queryLimit == null ? [tokenKey, minBalanceUsd, favoriteEntityKeys, asOfSnapshotId] : [tokenKey, minBalanceUsd, favoriteEntityKeys, asOfSnapshotId, queryLimit],
       );

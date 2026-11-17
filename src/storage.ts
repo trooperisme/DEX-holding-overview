@@ -1051,7 +1051,7 @@ function createSqliteStorage(cwd: string): StorageAdapter {
              AND hs.status IN ('success', 'partial')
              AND (? IS NULL OR hs.id <= ?)
            GROUP BY hs.id, ch.token_key
-           ORDER BY datetime(COALESCE(hs.finished_at, hs.created_at)) ${historyOrder}, hs.id ${historyOrder}
+           ORDER BY hs.id ${historyOrder}
            ${historyLimitClause}`,
         )
         .all(...favoriteEntityKeys, tokenKey, minBalanceUsd, tokenKey, asOfSnapshotId, asOfSnapshotId, ...(queryLimit == null ? [] : [queryLimit])) as Array<Omit<TokenScorePoint, "score"> & { favoriteEntityCount?: number; favoriteHoldingsUsd?: number; liquidityUsd?: number | null }>;

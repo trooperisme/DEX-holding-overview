@@ -169,8 +169,10 @@ test("score history agrees with overview when a token skips a successful snapsho
     await storage.updateSnapshot({ id: first, status: "success", totalRows: 1, entitiesCompleted: 1, entitiesFailed: 0, finishedAt: "2026-11-14T00:00:00.000Z" });
     for (let day = 15; day <= 17; day += 1) {
       const middle = await storage.createSnapshot(1, null);
-      await storage.insertRawHoldingsForEntity(middle, entity.id, [tokenHolding(middle, entity.id, { tokenKey: "other", tokenSymbol: "OTHER" })]);
-      await storage.updateSnapshot({ id: middle, status: "success", totalRows: 1, entitiesCompleted: 1, entitiesFailed: 0, finishedAt: `2026-11-${day}T00:00:00.000Z` });
+      await storage.insertRawHoldingsForEntity(middle, entity.id, [day === 17
+        ? tokenHolding(middle, entity.id, { balance: "7540000", balanceUsd: 31_925 })
+        : tokenHolding(middle, entity.id, { tokenKey: "other", tokenSymbol: "OTHER" })]);
+      await storage.updateSnapshot({ id: middle, status: day === 17 ? "partial" : "success", totalRows: 1, entitiesCompleted: 1, entitiesFailed: 0, finishedAt: day === 17 ? "2026-11-19T00:00:00.000Z" : `2026-11-${day}T00:00:00.000Z` });
     }
     const latest = await storage.createSnapshot(1, null);
     await storage.insertRawHoldingsForEntity(latest, entity.id, [tokenHolding(latest, entity.id, { balance: "2000", balanceUsd: 40_000 })]);
