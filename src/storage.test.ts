@@ -150,6 +150,46 @@ test("token aggregations collapse duplicate database rows for the same logical e
   }
 });
 
+test("score history agrees with overview when a token skips a successful snapshot", async () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "dex-score-history-test-"));
+  const previousDatabaseUrl = process.env.DATABASE_URL;
+  delete process.env.DATABASE_URL;
+  const storage = createStorage(cwd);
+  try {
+    await storage.replaceEntities([{
+      entityName: "holder",
+      sourceUrl: "https://app.cielo.finance/bundles/holder/portfolio",
+      resolvedLabel: "holder",
+      linkType: "bundle",
+      walletAddresses: ["0xholder"],
+    }]);
+    const [entity] = await storage.getEntities();
+    const first = await storage.createSnapshot(1, null);
+    await storage.insertRawHoldingsForEntity(first, entity.id, [tokenHolding(first, entity.id, { balance: "1000", balanceUsd: 20_000 })]);
+    await storage.updateSnapshot({ id: first, status: "success", totalRows: 1, entitiesCompleted: 1, entitiesFailed: 0, finishedAt: "2026-11-14T00:00:00.000Z" });
+    for (let day = 15; day <= 17; day += 1) {
+      const middle = await storage.createSnapshot(1, null);
+      await storage.insertRawHoldingsForEntity(middle, entity.id, [tokenHolding(middle, entity.id, { tokenKey: "other", tokenSymbol: "OTHER" })]);
+      await storage.updateSnapshot({ id: middle, status: "success", totalRows: 1, entitiesCompleted: 1, entitiesFailed: 0, finishedAt: `2026-11-${day}T00:00:00.000Z` });
+    }
+    const latest = await storage.createSnapshot(1, null);
+    await storage.insertRawHoldingsForEntity(latest, entity.id, [tokenHolding(latest, entity.id, { balance: "2000", balanceUsd: 40_000 })]);
+    await storage.updateSnapshot({ id: latest, status: "success", totalRows: 1, entitiesCompleted: 1, entitiesFailed: 0, finishedAt: "2026-11-18T00:00:00.000Z" });
+
+    const [overview] = await storage.getOverview(latest, 111, 1, 11111, null);
+    const history = await storage.getTokenScoreHistory(overview.tokenKey, 111, [], 10);
+    assert.equal(history.at(-1)?.snapshotId, latest);
+    assert.equal(history.at(-1)?.score, overview.score);
+    const earlierHistory = await storage.getTokenScoreHistory(overview.tokenKey, 111, [], 10, first);
+    assert.deepEqual(earlierHistory.map((point) => point.snapshotId), [first]);
+  } finally {
+    await storage.close();
+    if (previousDatabaseUrl == null) delete process.env.DATABASE_URL;
+    else process.env.DATABASE_URL = previousDatabaseUrl;
+    fs.rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
 test("insertRawHoldingsForEntity normalizes Solana token names before storage", async () => {
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "dex-storage-test-"));
   const previousDatabaseUrl = process.env.DATABASE_URL;

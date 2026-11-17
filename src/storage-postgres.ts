@@ -1002,12 +1002,12 @@ export function createPostgresStorage(): StorageAdapter {
       }));
     },
 
-    async getTokenScoreHistory(tokenKey: string, minBalanceUsd = 111, favoriteEntityNames: string[] = [], limit: number | null = null): Promise<TokenScorePoint[]> {
+    async getTokenScoreHistory(tokenKey: string, minBalanceUsd = 111, favoriteEntityNames: string[] = [], limit: number | null = null, asOfSnapshotId: number | null = null): Promise<TokenScorePoint[]> {
       const favoriteEntityKeys = normalizeFavoriteEntityKeys(favoriteEntityNames);
       const historyLimit = Number.isFinite(Number(limit)) && Number(limit) > 0 ? Math.min(100, Math.trunc(Number(limit))) : null;
       const queryLimit = historyLimit == null ? null : historyLimit + 2;
       const historyOrder = queryLimit == null ? "ASC" : "DESC";
-      const historyLimitClause = queryLimit == null ? "" : "LIMIT $4";
+      const historyLimitClause = queryLimit == null ? "" : "LIMIT $5";
       const result = await getPool().query(
         `WITH canonical_holdings AS (
            SELECT
@@ -1058,10 +1058,11 @@ export function createPostgresStorage(): StorageAdapter {
          INNER JOIN ${table("holding_snapshots")} hs ON hs.id = ch.snapshot_id
          WHERE ch.token_key = $1
            AND hs.status IN ('success', 'partial')
+           AND ($4::bigint IS NULL OR hs.id <= $4)
          GROUP BY hs.id, ch.token_key
          ORDER BY COALESCE(hs.finished_at, hs.created_at) ${historyOrder}, hs.id ${historyOrder}
          ${historyLimitClause}`,
-        queryLimit == null ? [tokenKey, minBalanceUsd, favoriteEntityKeys] : [tokenKey, minBalanceUsd, favoriteEntityKeys, queryLimit],
+        queryLimit == null ? [tokenKey, minBalanceUsd, favoriteEntityKeys, asOfSnapshotId] : [tokenKey, minBalanceUsd, favoriteEntityKeys, asOfSnapshotId, queryLimit],
       );
 
       const rows = result.rows.map((row) => ({
@@ -1082,15 +1083,27 @@ export function createPostgresStorage(): StorageAdapter {
         liquidityUsd: numberOrNull(row.liquidityUsd),
       })) as Array<Omit<TokenScorePoint, "score">>;
       if (queryLimit != null) rows.reverse();
+      const successfulSnapshots = await getPool().query<{ id: string }>(
+        `SELECT id FROM ${table("holding_snapshots")} WHERE status = 'success' AND ($1::bigint IS NULL OR id <= $1) ORDER BY id ASC`,
+        [asOfSnapshotId],
+      );
+      const successfulIds = successfulSnapshots.rows.map((snapshot) => Number(snapshot.id));
+      const samplesBySnapshot = new Map<number, ScoreHistorySample>(rows.filter((row) => row.snapshotStatus === "success").map((row) => [row.snapshotId, {
+        tokenAmount: row.tokenAmount,
+        holdingsUsd: row.holdingsUsd,
+        smwIn: row.smwIn,
+        favoriteEntityCount: Number(row.favoriteEntityCount || 0),
+        favoriteHoldingsUsd: Number(row.favoriteHoldingsUsd || 0),
+        at: row.snapshotFinishedAt || row.snapshotCreatedAt,
+      }]));
       const convictionBySnapshot = await getEntityConvictionForTokenAtSnapshots(
         [...new Set(rows.map((row) => row.snapshotId))],
         tokenKey,
         minBalanceUsd,
       );
-      let previous: ScoreHistorySample | undefined;
-      let previousPrevious: ScoreHistorySample | undefined;
       const scoredRows: TokenScorePoint[] = [];
       for (const row of rows) {
+        const previousIds = successfulIds.filter((id) => id < row.snapshotId).slice(-2).reverse();
         const normalized = {
           ...row,
           entityConviction: convictionBySnapshot.get(row.snapshotId) || 1,
@@ -1098,21 +1111,10 @@ export function createPostgresStorage(): StorageAdapter {
         };
         scoredRows.push(withOpportunityScore(normalized, {
           currentAt: row.snapshotFinishedAt || row.snapshotCreatedAt,
-          previous,
-          previousPrevious,
+          previous: samplesBySnapshot.get(previousIds[0]),
+          previousPrevious: samplesBySnapshot.get(previousIds[1]),
           entityConviction: normalized.entityConviction,
         }) as TokenScorePoint);
-        if (row.snapshotStatus === "success") {
-          previousPrevious = previous;
-          previous = {
-            tokenAmount: row.tokenAmount,
-            holdingsUsd: row.holdingsUsd,
-            smwIn: row.smwIn,
-            favoriteEntityCount: Number(row.favoriteEntityCount || 0),
-            favoriteHoldingsUsd: Number(row.favoriteHoldingsUsd || 0),
-            at: row.snapshotFinishedAt || row.snapshotCreatedAt,
-          };
-        }
       }
       return historyLimit == null ? scoredRows : scoredRows.slice(-historyLimit);
     },

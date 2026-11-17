@@ -76,6 +76,7 @@ export type StorageAdapter = {
     minBalanceUsd?: number,
     favoriteEntityNames?: string[],
     limit?: number | null,
+    asOfSnapshotId?: number | null,
   ): StorageResult<TokenScorePoint[]>;
   upsertBlacklist(input: {
     tokenKey: string;

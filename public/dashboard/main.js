@@ -904,6 +904,7 @@ function buildScoreTrendPanel(tokenKey) {
 
   const latest = points.at(-1);
   const previous = points.at(-2);
+  const matchesSelectedSnapshot = Number(latest.snapshotId) === Number(state.selectedSnapshotId);
   const visiblePoints = getVisibleTrendPoints(points);
   const deltaPct = getScoreDeltaPct(previous, latest);
   const deltaClass = Number(deltaPct) > 0 ? "is-positive" : Number(deltaPct) < 0 ? "is-negative" : "";
@@ -914,10 +915,10 @@ function buildScoreTrendPanel(tokenKey) {
       <div class="trend-panel__header">
         <div>
           <h3>Score Trend</h3>
-          <p>Showing ${visiblePoints.length} of ${points.length} snapshot point${points.length === 1 ? "" : "s"} · all points recalculated with current ${escapeHtml(latest.scoreVersion || "scoring")} rules</p>
+          <p>Showing ${visiblePoints.length} of ${points.length} snapshot point${points.length === 1 ? "" : "s"} through snapshot #${escapeHtml(state.selectedSnapshotId)} · all points recalculated with current ${escapeHtml(latest.scoreVersion || "scoring")} rules</p>
         </div>
         <div class="trend-stats">
-          <span>${escapeHtml(fmtScore(latest.score))}</span>
+          <span>${matchesSelectedSnapshot ? escapeHtml(fmtScore(latest.score)) : `Last recorded #${escapeHtml(latest.snapshotId)}: ${escapeHtml(fmtScore(latest.score))}`}</span>
           <strong class="${deltaClass}">${escapeHtml(fmtDeltaPct(deltaPct))}</strong>
         </div>
       </div>
@@ -934,6 +935,7 @@ function buildScoreTrendPanel(tokenKey) {
         </div>
         <span class="trend-actions__meta">${escapeHtml(windowLabel)} · ${escapeHtml(state.trendScale)} scale</span>
       </div>
+      ${matchesSelectedSnapshot ? "" : `<p class="empty-note">Snapshot #${escapeHtml(state.selectedSnapshotId)} has no completed score-history point. The ranking uses its current overview score.</p>`}
       ${buildScoreChart(visiblePoints, tokenKey)}
       ${buildDriverExplanation(previous, latest)}
     </div>
@@ -941,17 +943,20 @@ function buildScoreTrendPanel(tokenKey) {
 }
 
 function buildDrilldownSummary(tokenKey) {
+  const row = state.rows.find((item) => item.tokenKey === tokenKey);
   const points = state.scoreHistory.get(tokenKey);
-  if (!points?.length) return "";
+  if (!row) return "";
 
-  const latest = points.at(-1);
-  const previous = points.at(-2);
-  const deltaPct = getScoreDeltaPct(previous, latest);
+  const latest = points?.at(-1);
+  const previous = points?.at(-2);
+  const deltaPct = Number(latest?.snapshotId) === Number(state.selectedSnapshotId)
+    ? getScoreDeltaPct(previous, latest)
+    : null;
   const deltaClass = Number(deltaPct) > 0 ? "is-positive" : Number(deltaPct) < 0 ? "is-negative" : "";
 
   return `
     <div class="drilldown-summary">
-      <span>${escapeHtml(fmtScore(latest.score))}</span>
+      <span>${escapeHtml(fmtScore(row.score))}</span>
       <strong class="${deltaClass}">${escapeHtml(fmtDeltaPct(deltaPct))}</strong>
     </div>
   `;
@@ -1272,6 +1277,7 @@ async function loadHolders(tokenKey) {
 
 async function loadScoreHistory(tokenKey) {
   const requestedLimit = state.trendWindow === "all" ? null : Number(state.trendWindow || 10);
+  const requestedSnapshotId = state.selectedSnapshotId;
   const cachedLimit = state.scoreHistoryLimits.get(tokenKey);
   if (
     state.scoreHistory.has(tokenKey) &&
@@ -1284,19 +1290,24 @@ async function loadScoreHistory(tokenKey) {
   const params = new URLSearchParams({
     tokenKey,
     minBalanceUsd: String(minBalanceUsd),
+    snapshotId: String(requestedSnapshotId),
   });
   if (requestedLimit != null) params.set("limit", String(requestedLimit));
   try {
     const payload = await fetchJson(`/api/token-score-history?${params.toString()}`);
-    state.scoreHistory.set(tokenKey, Array.isArray(payload.rows) ? payload.rows : []);
-    state.scoreHistoryLimits.set(tokenKey, requestedLimit);
+    if (state.selectedSnapshotId === requestedSnapshotId && Number(els.minBalanceInput.value || 111) === minBalanceUsd) {
+      state.scoreHistory.set(tokenKey, Array.isArray(payload.rows) ? payload.rows : []);
+      state.scoreHistoryLimits.set(tokenKey, requestedLimit);
+    }
   } catch (error) {
-    state.scoreHistoryErrors.set(tokenKey, error instanceof Error ? error.message : "Unexpected error");
+    if (state.selectedSnapshotId === requestedSnapshotId) {
+      state.scoreHistoryErrors.set(tokenKey, error instanceof Error ? error.message : "Unexpected error");
+    }
   } finally {
     state.loadingScoreHistory.delete(tokenKey);
     if (state.openTokenKey === tokenKey) renderTable();
     const currentLimit = state.trendWindow === "all" ? null : Number(state.trendWindow || 10);
-    if (state.openTokenKey === tokenKey && currentLimit !== requestedLimit) {
+    if (state.openTokenKey === tokenKey && (currentLimit !== requestedLimit || state.selectedSnapshotId !== requestedSnapshotId || Number(els.minBalanceInput.value || 111) !== minBalanceUsd)) {
       void loadScoreHistory(tokenKey);
     }
   }

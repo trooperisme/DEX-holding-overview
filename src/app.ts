@@ -356,12 +356,13 @@ app.get("/api/token-holders", async (req, res) => {
 app.get("/api/token-score-history", async (req, res) => {
   const tokenKey = String(req.query.tokenKey || "");
   const minBalanceUsd = Number(req.query.minBalanceUsd || 111);
+  const asOfSnapshotId = req.query.snapshotId == null ? null : Number(req.query.snapshotId);
   const requestedLimit = Number(req.query.limit || 0);
   const historyLimit = Number.isFinite(requestedLimit) && requestedLimit > 0
     ? Math.min(100, Math.trunc(requestedLimit))
     : null;
-  if (!tokenKey) {
-    res.status(400).json({ error: "tokenKey is required" });
+  if (!tokenKey || (asOfSnapshotId != null && (!Number.isInteger(asOfSnapshotId) || asOfSnapshotId <= 0))) {
+    res.status(400).json({ error: "tokenKey and a valid snapshotId are required" });
     return;
   }
 
@@ -369,7 +370,7 @@ app.get("/api/token-score-history", async (req, res) => {
   try {
     const favoriteEntities = await storage.getFavoriteEntityNames();
     res.set("Cache-Control", "private, no-store").json({
-      rows: await storage.getTokenScoreHistory(tokenKey, minBalanceUsd, favoriteEntities, historyLimit),
+      rows: await storage.getTokenScoreHistory(tokenKey, minBalanceUsd, favoriteEntities, historyLimit, asOfSnapshotId),
     });
   } catch (error) {
     sendServerError(res, error);

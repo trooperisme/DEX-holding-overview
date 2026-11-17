@@ -988,7 +988,7 @@ function createSqliteStorage(cwd: string): StorageAdapter {
         .all(snapshotId, tokenKey, minBalanceUsd) as TokenHolderRow[];
     },
 
-    getTokenScoreHistory(tokenKey: string, minBalanceUsd = 111, favoriteEntityNames: string[] = [], limit: number | null = null): TokenScorePoint[] {
+    getTokenScoreHistory(tokenKey: string, minBalanceUsd = 111, favoriteEntityNames: string[] = [], limit: number | null = null, asOfSnapshotId: number | null = null): TokenScorePoint[] {
       const favoriteEntityKeys = normalizeFavoriteEntityKeys(favoriteEntityNames);
       const historyLimit = Number.isFinite(Number(limit)) && Number(limit) > 0 ? Math.min(100, Math.trunc(Number(limit))) : null;
       const queryLimit = historyLimit == null ? null : historyLimit + 2;
@@ -1049,20 +1049,31 @@ function createSqliteStorage(cwd: string): StorageAdapter {
            INNER JOIN holding_snapshots hs ON hs.id = ch.snapshot_id
            WHERE ch.token_key = ?
              AND hs.status IN ('success', 'partial')
+             AND (? IS NULL OR hs.id <= ?)
            GROUP BY hs.id, ch.token_key
            ORDER BY datetime(COALESCE(hs.finished_at, hs.created_at)) ${historyOrder}, hs.id ${historyOrder}
            ${historyLimitClause}`,
         )
-        .all(...favoriteEntityKeys, tokenKey, minBalanceUsd, tokenKey, ...(queryLimit == null ? [] : [queryLimit])) as Array<Omit<TokenScorePoint, "score"> & { favoriteEntityCount?: number; favoriteHoldingsUsd?: number; liquidityUsd?: number | null }>;
+        .all(...favoriteEntityKeys, tokenKey, minBalanceUsd, tokenKey, asOfSnapshotId, asOfSnapshotId, ...(queryLimit == null ? [] : [queryLimit])) as Array<Omit<TokenScorePoint, "score"> & { favoriteEntityCount?: number; favoriteHoldingsUsd?: number; liquidityUsd?: number | null }>;
       if (queryLimit != null) rows.reverse();
+      const successfulIds = (db.prepare(
+        "SELECT id FROM holding_snapshots WHERE status = 'success' AND (? IS NULL OR id <= ?) ORDER BY id ASC",
+      ).all(asOfSnapshotId, asOfSnapshotId) as Array<{ id: number }>).map((snapshot) => snapshot.id);
+      const samplesBySnapshot = new Map<number, ScoreHistorySample>(rows.filter((row) => row.snapshotStatus === "success").map((row) => [row.snapshotId, {
+        tokenAmount: Number(row.tokenAmount || 0),
+        holdingsUsd: Number(row.holdingsUsd || 0),
+        smwIn: Number(row.smwIn || 0),
+        favoriteEntityCount: Number(row.favoriteEntityCount || 0),
+        favoriteHoldingsUsd: Number(row.favoriteHoldingsUsd || 0),
+        at: row.snapshotFinishedAt || row.snapshotCreatedAt,
+      }]));
       const convictionBySnapshot = entityConvictionForTokenAtSnapshots(
         [...new Set(rows.map((row) => row.snapshotId))],
         tokenKey,
         minBalanceUsd,
       );
-      let previous: ScoreHistorySample | undefined;
-      let previousPrevious: ScoreHistorySample | undefined;
       const scoredRows = rows.map((row) => {
+        const previousIds = successfulIds.filter((id) => id < row.snapshotId).slice(-2).reverse();
         const normalized = {
           ...row,
           favoriteEntityCount: Number(row.favoriteEntityCount || 0),
@@ -1072,21 +1083,10 @@ function createSqliteStorage(cwd: string): StorageAdapter {
         };
         const scored = withOpportunityScore(normalized, {
           currentAt: row.snapshotFinishedAt || row.snapshotCreatedAt,
-          previous,
-          previousPrevious,
+          previous: samplesBySnapshot.get(previousIds[0]),
+          previousPrevious: samplesBySnapshot.get(previousIds[1]),
           entityConviction: normalized.entityConviction,
         });
-        if (row.snapshotStatus === "success") {
-          previousPrevious = previous;
-          previous = {
-            tokenAmount: Number(row.tokenAmount || 0),
-            holdingsUsd: Number(row.holdingsUsd || 0),
-            smwIn: Number(row.smwIn || 0),
-            favoriteEntityCount: normalized.favoriteEntityCount,
-            favoriteHoldingsUsd: normalized.favoriteHoldingsUsd,
-            at: row.snapshotFinishedAt || row.snapshotCreatedAt,
-          };
-        }
         return scored;
       });
       return historyLimit == null ? scoredRows : scoredRows.slice(-historyLimit);
