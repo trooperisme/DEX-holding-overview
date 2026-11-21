@@ -12,6 +12,7 @@ export type MarketCapEvidence = {
   coinmarketcap: number | null;
   differencePct: number | null;
   note?: string;
+  identityMatch?: "chain-contract" | "unique-contract" | "ambiguous";
 };
 
 export function legacyMarketCapEvidence(

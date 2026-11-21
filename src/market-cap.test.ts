@@ -180,3 +180,272 @@ test("bulk market-cap enrichment matches contracts and batches quotes", async ()
   );
   assert.ok(paths.length <= 5);
 });
+
+test("unknown-chain lookup resolves a unique exact contract without guessing or rewriting the holding chain", async () => {
+  const unknown = { ...token, chainId: null, networkName: "Unknown" };
+  const paths: string[] = [];
+  const quote = await queryMarketCap(
+    unknown,
+    options(
+      fake((url) => {
+        paths.push(url);
+        if (url.includes("/coins/list"))
+          return [
+            { id: "sample", platforms: { ethereum: token.tokenAddress } },
+          ];
+        if (url.includes("coingecko"))
+          return {
+            id: "sample",
+            platforms: { ethereum: token.tokenAddress },
+            last_updated: at,
+            market_data: { market_cap: { usd: 1e6 } },
+          };
+        if (url.includes("/info?"))
+          return {
+            data: {
+              "7": {
+                id: 7,
+                platform: {
+                  slug: "ethereum",
+                  token_address: token.tokenAddress,
+                },
+              },
+            },
+          };
+        return {
+          data: [
+            {
+              id: 7,
+              quote: [{ symbol: "USD", market_cap: 1.1e6, last_updated: at }],
+            },
+          ],
+        };
+      }),
+    ),
+  );
+  assert.equal(quote.marketCapEvidence.status, "cross-checked");
+  assert.ok(
+    quote.marketCapEvidence.note?.includes("holdings chain remains unknown"),
+  );
+  assert.ok(!paths.some((p) => p.includes("/coins/ethereum/contract/")));
+  assert.equal(unknown.chainId, null);
+});
+
+test("unknown-chain ambiguity cannot be resolved by selecting one convenient asset", async () => {
+  const quote = await queryMarketCap(
+    { ...token, chainId: null, networkName: "Unknown" },
+    options(
+      fake((url) => {
+        if (url.includes("/coins/list"))
+          return [
+            { id: "asset-a", platforms: { ethereum: token.tokenAddress } },
+            { id: "asset-b", platforms: { base: token.tokenAddress } },
+          ];
+        return {
+          data: {
+            "7": {
+              id: 7,
+              platform: { slug: "ethereum", token_address: token.tokenAddress },
+            },
+          },
+        };
+      }),
+    ),
+  );
+  assert.equal(quote.marketCap, null);
+  assert.equal(quote.marketCapEvidence.status, "conflict");
+});
+
+test("matching cap values do not override provider disagreement about the contract chain", async () => {
+  const quote = await queryMarketCap(
+    { ...token, chainId: null, networkName: "Unknown" },
+    options(
+      fake((url) => {
+        if (url.includes("/coins/list"))
+          return [
+            { id: "asset-a", platforms: { ethereum: token.tokenAddress } },
+          ];
+        if (url.includes("coingecko"))
+          return {
+            id: "asset-a",
+            platforms: { ethereum: token.tokenAddress },
+            last_updated: at,
+            market_data: { market_cap: { usd: 1e6 } },
+          };
+        if (url.includes("/info?"))
+          return {
+            data: {
+              "7": {
+                id: 7,
+                platform: { slug: "base", token_address: token.tokenAddress },
+              },
+            },
+          };
+        return {
+          data: [
+            {
+              id: 7,
+              quote: [{ symbol: "USD", market_cap: 1e6, last_updated: at }],
+            },
+          ],
+        };
+      }),
+    ),
+  );
+  assert.equal(quote.marketCap, null);
+  assert.equal(quote.marketCapEvidence.status, "conflict");
+});
+
+test("explicit unsupported chain IDs are never silently replaced with Ethereum", async () => {
+  let calls = 0;
+  const quote = await queryMarketCap(
+    { ...token, chainId: 123456789, networkName: "Ethereum" },
+    options(
+      fake(() => {
+        calls++;
+        return {};
+      }),
+    ),
+  );
+  assert.equal(quote.marketCap, null);
+  assert.equal(calls, 0);
+});
+
+test("bulk enrichment also resolves unknown-chain exact contracts", async () => {
+  const unknown = { ...token, chainId: null, networkName: "Unknown" };
+  const result = await fetchSnapshotMarketCaps(
+    [unknown],
+    options(
+      fake((url) => {
+        if (url.includes("/coins/list"))
+          return [
+            { id: "sample", platforms: { ethereum: token.tokenAddress } },
+          ];
+        if (url.includes("/cryptocurrency/map"))
+          return {
+            data: [
+              {
+                id: 7,
+                slug: "sample",
+                platform: {
+                  slug: "ethereum",
+                  token_address: token.tokenAddress,
+                },
+              },
+            ],
+          };
+        if (url.includes("/cryptocurrency/info"))
+          return {
+            data: {
+              "7": {
+                id: 7,
+                platform: {
+                  slug: "ethereum",
+                  token_address: token.tokenAddress,
+                },
+              },
+            },
+          };
+        if (url.includes("/coins/markets"))
+          return [{ id: "sample", market_cap: 1e6, last_updated: at }];
+        return {
+          data: [
+            {
+              id: 7,
+              quote: [{ symbol: "USD", market_cap: 1e6, last_updated: at }],
+            },
+          ],
+        };
+      }),
+    ),
+  );
+  assert.equal(
+    result.get(marketCapTokenKey(unknown))?.marketCapEvidence.status,
+    "cross-checked",
+  );
+});
+
+test("identity disagreement is rejected even when one provider has no circulating market cap", async () => {
+  const quote = await queryMarketCap(
+    { ...token, chainId: null, networkName: "Unknown" },
+    options(
+      fake((url) => {
+        if (url.includes("/coins/list"))
+          return [
+            { id: "asset-a", platforms: { ethereum: token.tokenAddress } },
+          ];
+        if (url.includes("coingecko"))
+          return {
+            id: "asset-a",
+            platforms: { ethereum: token.tokenAddress },
+            last_updated: at,
+            market_data: { market_cap: { usd: null } },
+          };
+        if (url.includes("/info?"))
+          return {
+            data: {
+              "7": {
+                id: 7,
+                platform: { slug: "base", token_address: token.tokenAddress },
+              },
+            },
+          };
+        return {
+          data: [
+            {
+              id: 7,
+              quote: [{ symbol: "USD", market_cap: 1e6, last_updated: at }],
+            },
+          ],
+        };
+      }),
+    ),
+  );
+  assert.equal(quote.marketCap, null);
+  assert.equal(quote.marketCapEvidence.status, "conflict");
+});
+
+test("bulk metadata with two assets on the same chain is not resolved by last-write wins", async () => {
+  const result = await fetchSnapshotMarketCaps(
+    [token],
+    options(
+      fake((url) => {
+        if (url.includes("/coins/list")) return [];
+        if (url.includes("/cryptocurrency/map"))
+          return {
+            data: [
+              {
+                id: 7,
+                slug: "a",
+                platform: {
+                  slug: "ethereum",
+                  token_address: token.tokenAddress,
+                },
+              },
+              {
+                id: 8,
+                slug: "b",
+                platform: {
+                  slug: "ethereum",
+                  token_address: token.tokenAddress,
+                },
+              },
+            ],
+          };
+        return {
+          data: [
+            {
+              id: 8,
+              quote: [{ symbol: "USD", market_cap: 1e6, last_updated: at }],
+            },
+          ],
+        };
+      }),
+    ),
+  );
+  assert.equal(result.get(marketCapTokenKey(token))?.marketCap, null);
+  assert.equal(
+    result.get(marketCapTokenKey(token))?.marketCapEvidence.status,
+    "conflict",
+  );
+});

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   computeStructuralScore,
+  marketCapConfidence,
   measureHoldingDynamics,
   withOpportunityScore,
   ScoreHistorySample,
@@ -169,4 +170,15 @@ test("legacy values cannot reintroduce historical FDV-derived valuation bonuses"
   assert.equal(small.marketCapEvidence.status, "legacy");
   assert.equal(small.scoreComponents.marketCap, 0.8);
   assert.equal(small.score, big.score);
+});
+
+test("unknown holding-chain matches receive a lower valuation influence budget", () => {
+  assert.equal(
+    marketCapConfidence({ ...evidence, identityMatch: "unique-contract" }),
+    0.5,
+  );
+  assert.equal(
+    marketCapConfidence({ ...evidence, identityMatch: "chain-contract" }),
+    1,
+  );
 });
