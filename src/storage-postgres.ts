@@ -1,5 +1,7 @@
+import { buildObservationIndex, contextFromObservations } from "./score-observations";
+import { MarketCapEvidence, legacyMarketCapEvidence } from "./market-cap-types";
 import { Pool, PoolClient } from "pg";
-import { ScoreContext, ScoreHistorySample, withOpportunityScore } from "./scoring";
+import { withOpportunityScore } from "./scoring";
 import {
   EntityFetchRunRecord,
   EntityRecord,
@@ -23,6 +25,7 @@ let trenchIndexSchemaReady: Promise<void> | null = null;
 export async function closePostgresPool(): Promise<void> {
   const pool = sharedPool;
   sharedPool = null;
+  marketCapEvidenceSchemaReady = null;
   if (pool) await pool.end();
 }
 
@@ -265,61 +268,27 @@ async function getEntityConvictionForTokenAtSnapshots(
   return new Map(result.rows.map((row) => [Number(row.snapshot_id), Number(row.entity_conviction || 1)]));
 }
 
-async function getPreviousScoreSamples(
-  snapshotId: number,
-  minBalanceUsd: number,
-  favoriteEntityKeys: string[],
-): Promise<Map<string, ScoreHistorySample[]>> {
-  const snapshots = await getPool().query(
-    `SELECT id, COALESCE(finished_at, created_at) as at
-     FROM ${table("holding_snapshots")}
-     WHERE id < $1 AND status = 'success'
-     ORDER BY COALESCE(finished_at, created_at) DESC, id DESC
-     LIMIT 2`,
-    [snapshotId],
-  );
-  if (!snapshots.rows.length) return new Map();
-  const ids = snapshots.rows.map((row) => Number(row.id));
-  const result = await getPool().query(
-    `WITH canonical AS (
-       SELECT rh.snapshot_id, rh.token_key, lower(e.entity_name) as entity_key,
-              MAX(rh.balance_usd) as balance_usd,
-              MAX(NULLIF(regexp_replace(trim(rh.balance), '([^0-9eE+.-]).*$', ''), '')::numeric) as token_amount
-       FROM ${table("raw_holdings")} rh
-       INNER JOIN ${table("entities")} e ON e.id = rh.entity_id
-       LEFT JOIN ${table("token_blacklist")} bl
-         ON bl.token_key = rh.token_key AND bl.is_active = true
-       WHERE rh.snapshot_id = ANY($1::bigint[]) AND rh.balance_usd >= $2 AND bl.id IS NULL
-       GROUP BY rh.snapshot_id, rh.token_key, lower(e.entity_name)
-     )
-     SELECT snapshot_id, token_key,
-            ROUND(SUM(balance_usd)::numeric, 2) as holdings_usd,
-            SUM(token_amount) as token_amount,
-            COUNT(*) as smw_in,
-            COUNT(*) FILTER (WHERE entity_key = ANY($3::text[])) as favorite_entity_count,
-            ROUND(COALESCE(SUM(balance_usd) FILTER (WHERE entity_key = ANY($3::text[])), 0)::numeric, 2) as favorite_holdings_usd
-     FROM canonical
-     GROUP BY snapshot_id, token_key`,
-    [ids, minBalanceUsd, favoriteEntityKeys],
-  );
-  const snapshotById = new Map(snapshots.rows.map((row) => [Number(row.id), String(row.at)]));
-  const grouped = new Map<string, ScoreHistorySample[]>();
-  for (const row of result.rows) {
-    const at = snapshotById.get(Number(row.snapshot_id));
-    if (!at) continue;
-    const list = grouped.get(row.token_key) || [];
-    list.push({
-      tokenAmount: Number(row.token_amount || 0),
-      holdingsUsd: Number(row.holdings_usd || 0),
-      smwIn: Number(row.smw_in || 0),
-      favoriteEntityCount: Number(row.favorite_entity_count || 0),
-      favoriteHoldingsUsd: Number(row.favorite_holdings_usd || 0),
-      at,
-    });
-    grouped.set(row.token_key, list);
-  }
-  for (const list of grouped.values()) list.sort((left, right) => Date.parse(right.at) - Date.parse(left.at));
-  return grouped;
+let marketCapEvidenceSchemaReady: Promise<void> | null = null;
+async function ensureMarketCapEvidenceTable(): Promise<void> {
+  if (!marketCapEvidenceSchemaReady) marketCapEvidenceSchemaReady = withTransaction(async client => {
+    await client.query("SELECT pg_advisory_xact_lock($1::bigint)", ["678910023450123458"]);
+    await client.query(`CREATE TABLE IF NOT EXISTS ${table("snapshot_market_cap_evidence")} (
+      snapshot_id bigint NOT NULL REFERENCES ${table("holding_snapshots")}(id) ON DELETE CASCADE,
+      token_key text NOT NULL, evidence jsonb NOT NULL, PRIMARY KEY(snapshot_id, token_key)
+    )`);
+  }).catch(error => { marketCapEvidenceSchemaReady = null; throw error; });
+  await marketCapEvidenceSchemaReady;
+}
+async function loadScoreState(snapshotIds: number[], favorites: string[], tokenKey?: string) {
+  await ensureMarketCapEvidenceTable();
+  const ids = [...new Set(snapshotIds)];
+  const [snapshots, positions, runs, evidenceRows] = await Promise.all([
+    getPool().query(`SELECT id, status, COALESCE(finished_at, created_at) as at FROM ${table("holding_snapshots")} WHERE id = ANY($1::bigint[])`, [ids]),
+    getPool().query(`SELECT rh.snapshot_id as "snapshotId", rh.token_key as "tokenKey", lower(e.entity_name) as "entityKey", rh.balance as "tokenAmount", rh.balance_usd as "balanceUsd" FROM ${table("raw_holdings")} rh INNER JOIN ${table("entities")} e ON e.id = rh.entity_id WHERE rh.snapshot_id = ANY($1::bigint[]) ${tokenKey ? "AND rh.token_key = $2" : ""}`, tokenKey ? [ids, tokenKey] : [ids]),
+    getPool().query(`SELECT r.snapshot_id as "snapshotId", lower(e.entity_name) as "entityKey", r.status FROM ${table("entity_fetch_runs")} r INNER JOIN ${table("entities")} e ON e.id = r.entity_id WHERE r.snapshot_id = ANY($1::bigint[]) ORDER BY r.id DESC`, [ids]),
+    getPool().query(`SELECT snapshot_id as "snapshotId", token_key as "tokenKey", evidence FROM ${table("snapshot_market_cap_evidence")} WHERE snapshot_id = ANY($1::bigint[]) ${tokenKey ? "AND token_key = $2" : ""}`, tokenKey ? [ids, tokenKey] : [ids]),
+  ]);
+  return { observations: buildObservationIndex(snapshots.rows.map(r => ({ id: Number(r.id), status: r.status, at: r.at instanceof Date ? r.at.toISOString() : String(r.at) })), positions.rows, runs.rows, favorites), evidence: new Map<string, MarketCapEvidence>(evidenceRows.rows.map(r => [`${r.snapshotId}:${r.tokenKey}`, r.evidence])) };
 }
 
 function normalizeRawHoldingTokenName(row: RawHoldingRecord): string {
@@ -731,24 +700,11 @@ export function createPostgresStorage(): StorageAdapter {
     },
 
     async updateSnapshotTokenMarketData(snapshotId, tokenKey, marketData): Promise<void> {
-      await getPool().query(
-        `UPDATE ${table("raw_holdings")}
-         SET market_cap = COALESCE($3, market_cap),
-             liquidity_usd = $4,
-             volume_24h = $5,
-             txns_24h = $6,
-             token_age_hours = $7
-         WHERE snapshot_id = $1 AND token_key = $2`,
-        [
-          snapshotId,
-          tokenKey,
-          marketData.marketCap,
-          marketData.liquidityUsd,
-          marketData.volume24h,
-          marketData.txns24h,
-          marketData.tokenAgeHours,
-        ],
-      );
+      await ensureMarketCapEvidenceTable();
+      await withTransaction(async client => {
+        if (marketData.marketCapEvidence || marketData.marketCap != null) await client.query(`INSERT INTO ${table("snapshot_market_cap_evidence")}(snapshot_id, token_key, evidence) VALUES ($1, $2, $3::jsonb) ON CONFLICT(snapshot_id, token_key) DO UPDATE SET evidence = excluded.evidence`, [snapshotId, tokenKey, JSON.stringify(marketData.marketCapEvidence || legacyMarketCapEvidence(marketData.marketCap))]);
+        await client.query(`UPDATE ${table("raw_holdings")} SET market_cap = CASE WHEN $8::boolean THEN NULL ELSE COALESCE($3, market_cap) END, liquidity_usd = $4, volume_24h = $5, txns_24h = $6, token_age_hours = $7 WHERE snapshot_id = $1 AND token_key = $2`, [snapshotId, tokenKey, marketData.marketCap, marketData.liquidityUsd, marketData.volume24h, marketData.txns24h, marketData.tokenAgeHours, marketData.marketCapEvidence?.status === "conflict"]);
+      });
     },
 
     async getSnapshotSummaries(): Promise<SnapshotRecord[]> {
@@ -944,29 +900,19 @@ export function createPostgresStorage(): StorageAdapter {
         [snapshotId, minBalanceUsd, minSmwIn, minLiquidityUsd, maxMarketCapUsd, favoriteEntityKeys],
       );
       const convictionQuery = getEntityConvictionByToken(snapshotId, minBalanceUsd);
-      const snapshotQuery = getPool().query(
-        `SELECT COALESCE(finished_at, created_at) as at FROM ${table("holding_snapshots")} WHERE id = $1`,
-        [snapshotId],
-      );
-      const previousQuery = getPreviousScoreSamples(snapshotId, minBalanceUsd, favoriteEntityKeys);
-      const [result, convictionByToken, snapshotResult, previousByToken] = await Promise.all([
-        overviewQuery, convictionQuery, snapshotQuery, previousQuery,
+      const previousResult = await getPool().query(`SELECT id FROM ${table("holding_snapshots")} WHERE id < $1 AND status = 'success' ORDER BY id DESC LIMIT 2`, [snapshotId]);
+      const previousIds = previousResult.rows.map(r => Number(r.id));
+      const scoreStateQuery = loadScoreState([snapshotId, ...previousIds], favoriteEntityKeys);
+      const [result, convictionByToken, scoreState] = await Promise.all([
+        overviewQuery, convictionQuery, scoreStateQuery,
       ]);
       const mappedRows = result.rows.map((row) => ({
         ...mapOverview(row),
         entityConviction: convictionByToken.get(row.token_key) || 1,
+        marketCapEvidence: scoreState.evidence.get(`${snapshotId}:${row.token_key}`),
       }));
-      const currentAt = snapshotResult.rows[0]?.at instanceof Date
-        ? snapshotResult.rows[0].at.toISOString()
-        : String(snapshotResult.rows[0]?.at || new Date().toISOString());
       return mappedRows.map((row) => {
-        const previous = previousByToken.get(row.tokenKey) || [];
-        const context: ScoreContext = {
-          currentAt,
-          previous: previous[0],
-          previousPrevious: previous[1],
-          entityConviction: row.entityConviction,
-        };
+        const context = contextFromObservations(scoreState.observations, snapshotId, row.tokenKey, previousIds, favoriteEntityKeys);
         return withOpportunityScore(row, context);
       });
     },
@@ -1088,14 +1034,8 @@ export function createPostgresStorage(): StorageAdapter {
         [asOfSnapshotId],
       );
       const successfulIds = successfulSnapshots.rows.map((snapshot) => Number(snapshot.id));
-      const samplesBySnapshot = new Map<number, ScoreHistorySample>(rows.filter((row) => row.snapshotStatus === "success").map((row) => [row.snapshotId, {
-        tokenAmount: row.tokenAmount,
-        holdingsUsd: row.holdingsUsd,
-        smwIn: row.smwIn,
-        favoriteEntityCount: Number(row.favoriteEntityCount || 0),
-        favoriteHoldingsUsd: Number(row.favoriteHoldingsUsd || 0),
-        at: row.snapshotFinishedAt || row.snapshotCreatedAt,
-      }]));
+      const neededIds = [...new Set(rows.flatMap(row => [row.snapshotId, ...successfulIds.filter(id => id < row.snapshotId).slice(-2)]))];
+      const scoreState = await loadScoreState(neededIds, favoriteEntityKeys, tokenKey);
       const convictionBySnapshot = await getEntityConvictionForTokenAtSnapshots(
         [...new Set(rows.map((row) => row.snapshotId))],
         tokenKey,
@@ -1107,14 +1047,10 @@ export function createPostgresStorage(): StorageAdapter {
         const normalized = {
           ...row,
           entityConviction: convictionBySnapshot.get(row.snapshotId) || 1,
+          marketCapEvidence: scoreState.evidence.get(`${row.snapshotId}:${tokenKey}`),
           favoriteEntityNames: [],
         };
-        scoredRows.push(withOpportunityScore(normalized, {
-          currentAt: row.snapshotFinishedAt || row.snapshotCreatedAt,
-          previous: samplesBySnapshot.get(previousIds[0]),
-          previousPrevious: samplesBySnapshot.get(previousIds[1]),
-          entityConviction: normalized.entityConviction,
-        }) as TokenScorePoint);
+        scoredRows.push(withOpportunityScore(normalized, contextFromObservations(scoreState.observations, row.snapshotId, tokenKey, previousIds, favoriteEntityKeys)));
       }
       return historyLimit == null ? scoredRows : scoredRows.slice(-historyLimit);
     },

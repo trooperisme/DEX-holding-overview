@@ -1,3 +1,6 @@
+import type { MarketCapEvidence } from "./market-cap-types";
+import type { HoldingDynamics, ScoreComponents } from "./scoring";
+import type { ScoreTrajectory } from "./score-trajectory";
 export type EntityLinkType = "bundle" | "account";
 
 export type ImportedEntity = {
@@ -142,6 +145,10 @@ export type TokenOverviewRow = {
   tokenAmount?: number;
   liquidityUsd?: number | null;
   entityConviction?: number;
+  marketCapEvidence?: MarketCapEvidence;
+  scoreComponents?: ScoreComponents;
+  holdingDynamics?: HoldingDynamics;
+  trajectory?: ScoreTrajectory;
   marketCap: number | null;
   tokenAgeHours: number | null;
   volume24h: number | null;

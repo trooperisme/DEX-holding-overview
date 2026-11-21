@@ -1,3 +1,4 @@
+import type { MarketCapEvidence } from "./market-cap-types";
 import {
   EntityFetchRunRecord,
   EntityRecord,
@@ -52,6 +53,7 @@ export type StorageAdapter = {
   insertRawHoldingsForEntity(snapshotId: number, entityId: number, rows: RawHoldingRecord[]): StorageResult<void>;
   updateSnapshotTokenMarketData(snapshotId: number, tokenKey: string, marketData: {
     marketCap: number | null;
+    marketCapEvidence?: MarketCapEvidence;
     liquidityUsd: number | null;
     volume24h: number | null;
     txns24h: number | null;

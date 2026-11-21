@@ -1,13 +1,15 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { selectMarketCap } from "./market-cap";
 import { computeOpportunityScore, computeStructuralScore, withOpportunityScore } from "./scoring";
 
-test("v3 structural score rewards a qualified low-cap", () => {
+test("v4 structural score rewards a qualified low-cap", () => {
   const score = computeStructuralScore({
     holdingsUsd: 5_952,
     smwIn: 3,
     favoriteEntityCount: 3,
     marketCap: 2_316_988,
+    marketCapEvidence: selectMarketCap(2316988,2316988,"2026-11-21T00:00:00Z").marketCapEvidence,
     tokenAgeHours: 10.6 * 24,
     liquidityUsd: 200_000,
     volume24h: 1_000_000,
@@ -88,7 +90,7 @@ test("large market cap alone cannot create a high priority score", () => {
   assert.ok(scored.score >= scored.baseScore);
 });
 
-test("momentum only adds to structural score and persistence can add confirmation", () => {
+test("matched entity accumulation increases the score", () => {
   const row = {
     holdingsUsd: 60_438,
     smwIn: 3,
@@ -111,7 +113,9 @@ test("momentum only adds to structural score and persistence can add confirmatio
     txns24h: 25,
   }, {
     currentAt: "2026-09-22T08:25:21.107Z",
+    current: { tokenAmount: 288300000, holdingsUsd: 60438, smwIn: 3, favoriteEntityCount: 1, favoriteHoldingsUsd: 8210, at: "2026-09-22T08:25:21.107Z", complete: true, observedEntityKeys: ["a"], entityAmounts: { a: 288300000 } },
     previous: {
+      complete: true, observedEntityKeys: ["a"], entityAmounts: { a: 128000000 },
       tokenAmount: 128_000_000,
       holdingsUsd: 7_632,
       smwIn: 3,
@@ -131,10 +135,10 @@ test("momentum only adds to structural score and persistence can add confirmatio
 
   assert.ok(scored.momentumBoost > 0);
   assert.ok(scored.score > scored.baseScore);
-  assert.equal(scored.scoreVersion, "v3");
+  assert.equal(scored.scoreVersion, "v4");
 });
 
-test("favorite convergence reaches the v3 calibration multiplier", () => {
+test("favorite convergence reaches the v4 calibration multiplier", () => {
   const row = {
     tokenKey: "ethereum:0xabc",
     tokenSymbol: "ABC",
@@ -160,7 +164,7 @@ test("favorite convergence reaches the v3 calibration multiplier", () => {
   assert.equal(scored.score, scored.baseScore);
 });
 
-test("negative or price-only movement never creates a negative momentum penalty", () => {
+test("aggregate-only history cannot imply holder momentum without coverage evidence", () => {
   const scored = withOpportunityScore({
     tokenKey: "ethereum:0xslow",
     tokenSymbol: "SLOW",
@@ -238,7 +242,7 @@ test("one small holder cannot reach the high attention lane through market data 
   assert.ok(computeOpportunityScore(row, context) <= 75_000);
 });
 
-test("captured PEPE, MORPHO, and CRV positions remain below high attention after v3", () => {
+test("captured PEPE, MORPHO, and CRV positions remain below high attention after v4", () => {
   const positions = [
     { symbol: "PEPE", holdingsUsd: 5_162.08, smwIn: 1, favoriteEntityCount: 1, marketCap: 1_876_287_619, tokenAgeHours: 31_399.43, liquidityUsd: 28_574_117.53, volume24h: 2_682_295.18, entityConviction: 1.6 },
     { symbol: "MORPHO", holdingsUsd: 10_175.24, smwIn: 1, favoriteEntityCount: 1, marketCap: 1_415_660_326, tokenAgeHours: null, liquidityUsd: 1_022_534.09, volume24h: 584_083.48, entityConviction: 1.6 },

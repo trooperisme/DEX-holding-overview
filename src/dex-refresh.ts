@@ -1,8 +1,9 @@
+import { canonicalAddress, fetchSnapshotMarketCaps, marketCapTokenKey, selectMarketCap } from "./market-cap";
 import {
-  fetchDexScreenerMarketData,
-  type DexScreenerMarketData,
-  toDexScreenerChainId,
-} from "./dexscreener";
+  fetchGeckoTerminalMarketData,
+  type GeckoTerminalMarketData,
+  toGeckoTerminalNetworkId,
+} from "./geckoterminal";
 import { loadTrackedEntities } from "./entities";
 import { getCieloProviderConfig, getProviderLabel } from "./holdings-provider";
 import { resolveWorkspacePaths } from "./runtime-paths";
@@ -60,19 +61,19 @@ async function enrichSnapshotMarketData(options: {
     .slice(0, options.totalEntities <= 1 ? 25 : undefined);
 
   if (!snapshotTokens.length) {
-    emitLog(options.callbacks, "info", "No enrichable token contracts found for DexScreener market-data lookup.");
+    emitLog(options.callbacks, "info", "No enrichable token contracts found for GeckoTerminal market-data lookup.");
     return { attempted: 0, enriched: 0, failed: 0 };
   }
 
   emitLog(
     options.callbacks,
     "info",
-    `Enriching ${snapshotTokens.length} unique tokens with DexScreener liquidity, volume, txns, market cap, and age data.`,
+    `Enriching ${snapshotTokens.length} unique tokens with GeckoTerminal pool data and CoinGecko/CoinMarketCap MCAP checks.`,
   );
 
-  let marketDataByTokenAddress: Map<string, DexScreenerMarketData>;
+  let marketDataByTokenAddress: Map<string, GeckoTerminalMarketData>;
   try {
-    marketDataByTokenAddress = await fetchDexScreenerMarketData(
+    marketDataByTokenAddress = await fetchGeckoTerminalMarketData(
       snapshotTokens.map((token) => ({
         tokenAddress: token.tokenAddress!,
         chainId: token.chainId,
@@ -81,10 +82,12 @@ async function enrichSnapshotMarketData(options: {
     );
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    emitLog(options.callbacks, "warning", `DexScreener enrichment skipped: ${message}`);
-    return { attempted: snapshotTokens.length, enriched: 0, failed: snapshotTokens.length };
+    emitLog(options.callbacks, "warning", `GeckoTerminal enrichment skipped: ${message}`);
+    marketDataByTokenAddress = new Map();
   }
 
+  throwIfAborted(options.signal);
+  const capQuotes = await fetchSnapshotMarketCaps(snapshotTokens.map(token => ({ tokenAddress: token.tokenAddress!, chainId: token.chainId, networkName: token.networkName })));
   let enriched = 0;
   let failed = 0;
   let marketCapsFound = 0;
@@ -94,29 +97,34 @@ async function enrichSnapshotMarketData(options: {
       throw new DOMException("Refresh canceled", "AbortError");
     }
 
-    const dexChainId = toDexScreenerChainId(token.chainId, token.networkName);
+    const geckoNetworkId = toGeckoTerminalNetworkId(token.chainId, token.networkName);
     const marketData = token.tokenAddress
-      ? marketDataByTokenAddress.get(`${dexChainId || "unknown"}:${token.tokenAddress.toLowerCase()}`)
+      ? marketDataByTokenAddress.get(`${geckoNetworkId || "unknown"}:${canonicalAddress(token.tokenAddress)}`)
       : null;
 
-    if (!marketData) {
+    const external = capQuotes.get(marketCapTokenKey({ tokenAddress: token.tokenAddress!, chainId: token.chainId, networkName: token.networkName }));
+    if (!marketData && !external?.marketCap && external?.marketCapEvidence.status !== "conflict") {
       failed += 1;
-      emitLog(options.callbacks, "warning", `DexScreener market-data lookup returned no pair for ${token.tokenSymbol}.`);
+      emitLog(options.callbacks, "warning", `GeckoTerminal market-data lookup returned no token data for ${token.tokenSymbol}.`);
       continue;
     }
 
-    await options.storage.updateSnapshotTokenMarketData(options.snapshotId, token.tokenKey, marketData);
+    const quote = external?.marketCapEvidence.status === "conflict" || external?.marketCap != null
+      ? external
+      : selectMarketCap(null, null, new Date().toISOString(), marketData?.marketCap || null);
+    const enrichedData = { liquidityUsd: null, volume24h: null, txns24h: null, tokenAgeHours: null, ...marketData, ...quote };
+    await options.storage.updateSnapshotTokenMarketData(options.snapshotId, token.tokenKey, enrichedData);
     enriched += 1;
-    if (marketData.marketCap != null) marketCapsFound += 1;
-    if (marketData.tokenAgeHours != null) tokenAgesFound += 1;
+    if (enrichedData.marketCap != null) marketCapsFound += 1;
+    if (enrichedData.tokenAgeHours != null) tokenAgesFound += 1;
   }
 
   emitLog(
     options.callbacks,
     failed > 0 || marketCapsFound < snapshotTokens.length || tokenAgesFound < snapshotTokens.length ? "warning" : "success",
     failed > 0
-      ? `DexScreener enrichment finished: ${enriched}/${snapshotTokens.length} tokens with pair data, ${failed} missing pair data; market cap ${marketCapsFound}/${snapshotTokens.length}, token age ${tokenAgesFound}/${snapshotTokens.length}.`
-      : `DexScreener enrichment finished: ${enriched}/${snapshotTokens.length} tokens with pair data; market cap ${marketCapsFound}/${snapshotTokens.length}, token age ${tokenAgesFound}/${snapshotTokens.length}.`,
+      ? `GeckoTerminal enrichment finished: ${enriched}/${snapshotTokens.length} tokens with pair data, ${failed} missing pair data; market cap ${marketCapsFound}/${snapshotTokens.length}, token age ${tokenAgesFound}/${snapshotTokens.length}.`
+      : `GeckoTerminal enrichment finished: ${enriched}/${snapshotTokens.length} tokens with pair data; market cap ${marketCapsFound}/${snapshotTokens.length}, token age ${tokenAgesFound}/${snapshotTokens.length}.`,
   );
 
   return {
