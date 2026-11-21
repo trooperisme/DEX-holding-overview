@@ -106,3 +106,11 @@ create index if not exists idx_raw_holdings_token_lookup on dex.raw_holdings(sna
 create index if not exists idx_raw_holdings_token_history on dex.raw_holdings(token_key, snapshot_id, balance_usd desc, entity_id);
 create index if not exists idx_snapshot_created on dex.holding_snapshots(created_at desc, id desc);
 create index if not exists idx_trench_index_fetched on dex.trench_index_snapshots(fetched_at desc, id desc);
+
+-- Snapshot-scoped provenance; live checks never rewrite historical market caps.
+CREATE TABLE IF NOT EXISTS dex.snapshot_market_cap_evidence (
+  snapshot_id bigint NOT NULL REFERENCES dex.holding_snapshots(id) ON DELETE CASCADE,
+  token_key text NOT NULL,
+  evidence jsonb NOT NULL,
+  PRIMARY KEY (snapshot_id, token_key)
+);

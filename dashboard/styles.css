@@ -2428,3 +2428,7 @@ html[data-theme="dark"] body.zagreb-dashboard .signals-table tbody tr.signal-row
   .trench-gauge { width: min(100%, 230px); }
   .market-regime-scale { width: min(100%, 310px); max-width: none; justify-self: center; }
 }
+
+.trajectory-summary { display: flex; flex-wrap: wrap; gap: .65rem 1.25rem; padding: 1rem; margin: .75rem 0; border: 1px solid var(--border, #374151); border-radius: 12px; }
+.trajectory-summary strong { flex-basis: 100%; }
+.trajectory-summary p { flex-basis: 100%; margin: 0; font-size: .85rem; line-height: 1.5; }

@@ -279,6 +279,12 @@ function fmtScore(value, includeUnits = true) {
   return includeUnits ? `${formatted} pts` : formatted;
 }
 
+function fmtSignedPoints(value) {
+  if (!Number.isFinite(Number(value))) return "—";
+  if (Number(value) === 0) return "0";
+  return `${Number(value) < 0 ? "−" : "+"}${fmtScore(Math.abs(Number(value)), false)}`;
+}
+
 function getMetricMax(rows, key) {
   return rows.reduce((max, row) => {
     const numeric = Number(row?.[key]);
@@ -781,7 +787,10 @@ function buildScoreChart(points, tokenKey) {
   const minScore = rawMin - paddingValue;
   const maxScore = rawMax + paddingValue;
   const spread = Math.max(0.0001, maxScore - minScore);
-  const xFor = (index) => padding.left + (points.length <= 1 ? chartWidth / 2 : (index / (points.length - 1)) * chartWidth);
+  const timestamps = points.map(point => Date.parse(getPointTime(point)));
+  const firstTime = Math.min(...timestamps), lastTime = Math.max(...timestamps);
+  const timeSpan = lastTime - firstTime;
+  const xFor = (index) => padding.left + (points.length <= 1 || !(timeSpan > 0) ? chartWidth / 2 : ((timestamps[index] - firstTime) / timeSpan) * chartWidth);
   const yFor = (score) => padding.top + chartHeight - ((transform(Number(score || 0)) - minScore) / spread) * chartHeight;
   const pathPoints = points.map((point, index) => `${xFor(index).toFixed(2)},${yFor(point.score).toFixed(2)}`).join(" ");
   const yTicks = [maxScore, minScore + spread / 2, minScore].map(inverse);
@@ -851,6 +860,7 @@ function buildDriverExplanation(previous, latest) {
 
   return `
     <section class="trend-explain">
+      ${latest.trajectory?.drivers?.length ? `<div class="trend-driver-grid">${latest.trajectory.drivers.map(driver => `<article class="trend-driver"><strong>${escapeHtml(driver.label)}</strong><p>${escapeHtml(fmtSignedPoints(driver.points))} pts</p></article>`).join("")}</div><p class="empty-note">Score change by factor; contributions depend on calculation order.</p>` : ""}
       <div class="trend-explain__header">
         <div>
           <h4>What moved</h4>
@@ -875,6 +885,22 @@ function buildDriverExplanation(previous, latest) {
       </div>
     </section>
   `;
+}
+
+const liveMarketCapChecks = new Map();
+const pendingMarketCapChecks = new Set();
+function buildMarketCapCheck(row) {
+  if (!row?.tokenAddress) return "";
+  const evidence = row.marketCapEvidence;
+  const live = liveMarketCapChecks.get(row.tokenKey);
+  const stateLabel = { "cross-checked": "Cross-checked", "single-source": "Single source", conflict: "Sources disagree", missing: "Unknown", legacy: "Legacy snapshot quote" };
+  return `<section class="trend-explain"><div class="trend-explain__header"><div><h4>Market-cap evidence</h4><p>Snapshot: ${escapeHtml(stateLabel[evidence?.status] || "Unknown")}${evidence?.status === "legacy" ? " (excluded from valuation scoring)" : ""} · ${escapeHtml(evidence?.source || "none")}${evidence?.observedAt ? ` · ${escapeHtml(fmtDate(evidence.observedAt))}` : ""}</p></div><button type="button" data-market-cap-check="${escapeHtml(row.tokenKey)}" ${pendingMarketCapChecks.has(row.tokenKey) ? "disabled" : ""}>${pendingMarketCapChecks.has(row.tokenKey) ? "Checking…" : "Check current MCAP"}</button></div>${live ? `<p role="status">${live.error ? escapeHtml(live.error) : `${escapeHtml(stateLabel[live.marketCapEvidence?.status] || "Unknown")}: ${escapeHtml(fmtUsdOrDash(live.marketCap))} · CoinGecko ${escapeHtml(fmtUsdOrDash(live.marketCapEvidence?.coingecko))} · CoinMarketCap ${escapeHtml(fmtUsdOrDash(live.marketCapEvidence?.coinmarketcap))}`}</p><p class="empty-note">Current lookup only; historical scores stay tied to their snapshot data.</p>` : ""}</section>`;
+}
+function buildTrajectorySummary(point) {
+  const t = point?.trajectory, d = point?.holdingDynamics;
+  const rate = t?.ratePointsPerDay == null ? "—" : `${fmtSignedPoints(t.ratePointsPerDay)} pts/day`;
+  const acceleration = t?.accelerationPointsPerDay2 == null ? "—" : `${fmtSignedPoints(t.accelerationPointsPerDay2)} pts/day²`;
+  return `<section class="trajectory-summary" aria-label="Score trajectory"><strong>${escapeHtml(t?.phase || "More completed observations needed")}</strong><span>Speed ${escapeHtml(rate)}</span><span>Acceleration ${escapeHtml(acceleration)}</span><p>${d?.status === "comparable" ? `Matched ${escapeHtml(String(d.cohortSize))} entities · token amount ${escapeHtml(fmtDeltaPct(d.amountChangePct))}` : "Holder momentum unavailable: comparable successful observations are required."}</p>${d?.status === "comparable" ? `<p>${escapeHtml(d.note)}${d.reducedEntities?.length ? ` Reduced: ${escapeHtml(d.reducedEntities.join(", "))}.` : ""}${d.increasedEntities?.length ? ` Increased: ${escapeHtml(d.increasedEntities.join(", "))}.` : ""}</p>` : ""}${t?.dataChanged ? '<p class="empty-note">Observation coverage or valuation evidence changed. Score movement includes a change in the measurement.</p>' : ""}</section>`;
 }
 
 function buildScoreTrendPanel(tokenKey) {
@@ -936,7 +962,9 @@ function buildScoreTrendPanel(tokenKey) {
         <span class="trend-actions__meta">${escapeHtml(windowLabel)} · ${escapeHtml(state.trendScale)} scale</span>
       </div>
       ${matchesSelectedSnapshot ? "" : `<p class="empty-note">Snapshot #${escapeHtml(state.selectedSnapshotId)} has no completed score-history point. The ranking uses its current overview score.</p>`}
+      ${buildTrajectorySummary(latest)}
       ${buildScoreChart(visiblePoints, tokenKey)}
+      ${buildMarketCapCheck(state.rows.find(row => row.tokenKey === tokenKey))}
       ${buildDriverExplanation(previous, latest)}
     </div>
   `;
@@ -1091,7 +1119,7 @@ function renderTableDetailRail() {
       <span>Detail availability</span>
       <p>${escapeHtml(holderState)} · ${escapeHtml(trendState)}</p>
     </div>
-    <p class="table-detail-rail__note">${escapeHtml(row.scoreVersion || "Current method")} attention points are relative, not USD.${row.smwIn <= 1 && row.holdingsUsd < 10_000 ? " One holder below $10k is limited to 75k points." : ""} Open the row for holders and score trend.</p>
+    <p class="table-detail-rail__note">${escapeHtml(row.scoreVersion || "Current method")} attention points are relative, not USD or expected returns.${row.smwIn <= 1 && row.holdingsUsd < 10_000 ? " One holder below $10k is limited to 75k points." : ""} Open the row for holders and score trend.</p>
   `;
 }
 
@@ -1364,6 +1392,22 @@ document.addEventListener("click", async (event) => {
     const name = removeFavoriteButton.dataset.removeFavorite?.toLowerCase();
     if (!name) return;
     await setFavoriteEntities(state.favoriteEntities.filter((favorite) => favorite.toLowerCase() !== name));
+    return;
+  }
+
+  const marketCapButton = target.closest("[data-market-cap-check]");
+  if (marketCapButton instanceof HTMLElement) {
+    event.stopPropagation();
+    const tokenKey = marketCapButton.dataset.marketCapCheck;
+    const row = state.rows.find(item => item.tokenKey === tokenKey);
+    if (!row || pendingMarketCapChecks.has(tokenKey)) return;
+    pendingMarketCapChecks.add(tokenKey); renderTable();
+    try {
+      const params = new URLSearchParams({ tokenAddress: row.tokenAddress, networkName: row.networkName });
+      if (row.chainId != null) params.set("chainId", String(row.chainId));
+      liveMarketCapChecks.set(tokenKey, await fetchJson(`/api/market-cap?${params}`));
+    } catch (error) { liveMarketCapChecks.set(tokenKey, { error: error instanceof Error ? error.message : "Market-cap check unavailable" }); }
+    finally { pendingMarketCapChecks.delete(tokenKey); renderTable(); }
     return;
   }
 

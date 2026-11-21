@@ -1,3 +1,5 @@
+import { queryMarketCap, coinGeckoPlatform, canonicalAddress } from "./market-cap";
+import { withScoreTrajectories } from "./score-trajectory";
 import path from "node:path";
 import crypto from "node:crypto";
 import dotenv from "dotenv";
@@ -6,7 +8,7 @@ import { createAuthRouter, createPasswordProtection } from "./auth";
 import { fetchDexScreenerMarketData } from "./dexscreener";
 import { createRefreshJobManager } from "./refresh-jobs";
 import { resolveWorkspacePaths } from "./runtime-paths";
-import { withOpportunityScore } from "./scoring";
+import { SCORE_VERSION, withOpportunityScore } from "./scoring";
 import { getLatestUsableSnapshot } from "./snapshot-selection";
 import { isRunningSnapshotStale } from "./snapshot-reconciliation";
 import { createStorage } from "./storage";
@@ -100,7 +102,7 @@ app.get("/dashboard/", (_req, res) => {
 
 app.get("/api/health", (_req, res) => {
   const activeJob = refreshJobs.getCurrent();
-  res.json({ ok: true, refreshRunning: Boolean(activeJob?.running), activeJob });
+  res.json({ ok: true, scoreVersion: SCORE_VERSION, marketCapProviders: { coingecko: Boolean(process.env.COINGECKO_API_KEY), coinmarketcap: Boolean(process.env.COINMARKETCAP_API_KEY) }, refreshRunning: Boolean(activeJob?.running), activeJob });
 });
 
 function isFreshTrenchIndex(fetchedAt: string): boolean {
@@ -332,6 +334,24 @@ app.get("/api/overview", async (req, res) => {
   }
 });
 
+// Live checks remain separate from historical scores and never backfill snapshots.
+const marketCapCache = new Map<string, { at: number; value: Awaited<ReturnType<typeof queryMarketCap>> }>();
+let lastMarketCapCheck = 0;
+app.get("/api/market-cap", async (req, res) => {
+  const token = { tokenAddress: String(req.query.tokenAddress || "").trim(), chainId: req.query.chainId == null ? null : Number(req.query.chainId), networkName: String(req.query.networkName || "").trim() };
+  const platform = coinGeckoPlatform(token);
+  if (!platform || !(platform === "solana" ? /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(token.tokenAddress) : /^0x[0-9a-fA-F]{40}$/.test(token.tokenAddress))) { res.status(400).json({ error: "A supported chain and valid token contract are required" }); return; }
+  const key = `${platform}:${canonicalAddress(token.tokenAddress)}`;
+  const cached = marketCapCache.get(key);
+  if (cached && Date.now() - cached.at < 600000) { res.set("Cache-Control", "private, no-store").json({ ...cached.value, live: true, affectsSnapshotScore: false }); return; }
+  if (Date.now() - lastMarketCapCheck < 1500) { res.status(429).set("Retry-After", "2").json({ error: "Wait two seconds before another market-cap check" }); return; }
+  lastMarketCapCheck = Date.now();
+  const value = await queryMarketCap(token);
+  if (marketCapCache.size >= 100) marketCapCache.delete(marketCapCache.keys().next().value!);
+  marketCapCache.set(key, { at: Date.now(), value });
+  res.set("Cache-Control", "private, no-store").json({ ...value, live: true, affectsSnapshotScore: false });
+});
+
 app.get("/api/token-holders", async (req, res) => {
   const snapshotId = Number(req.query.snapshotId || 0);
   const tokenKey = String(req.query.tokenKey || "");
@@ -370,7 +390,7 @@ app.get("/api/token-score-history", async (req, res) => {
   try {
     const favoriteEntities = await storage.getFavoriteEntityNames();
     res.set("Cache-Control", "private, no-store").json({
-      rows: await storage.getTokenScoreHistory(tokenKey, minBalanceUsd, favoriteEntities, historyLimit, asOfSnapshotId),
+      rows: withScoreTrajectories(await storage.getTokenScoreHistory(tokenKey, minBalanceUsd, favoriteEntities, historyLimit == null ? null : historyLimit + 2, asOfSnapshotId)).slice(historyLimit == null ? 0 : -historyLimit),
     });
   } catch (error) {
     sendServerError(res, error);

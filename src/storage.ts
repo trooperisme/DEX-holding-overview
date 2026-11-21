@@ -1,5 +1,7 @@
+import { buildObservationIndex, contextFromObservations } from "./score-observations";
+import { MarketCapEvidence, legacyMarketCapEvidence } from "./market-cap-types";
 import { resolveWorkspacePaths } from "./runtime-paths";
-import { ScoreContext, ScoreHistorySample, withOpportunityScore } from "./scoring";
+import { withOpportunityScore } from "./scoring";
 import { createPostgresStorage } from "./storage-postgres";
 import { SnapshotTokenForEnrichment, SnapshotUpdate, StorageAdapter } from "./storage-types";
 import { normalizeTokenName } from "./token-name";
@@ -309,7 +311,7 @@ function createSqliteStorage(cwd: string): StorageAdapter {
 
   const updateMarketDataForTokenStmt = db.prepare(`
     UPDATE raw_holdings
-    SET market_cap = COALESCE(@marketCap, market_cap),
+    SET market_cap = CASE WHEN @clearMarketCap = 1 THEN NULL ELSE COALESCE(@marketCap, market_cap) END,
         liquidity_usd = @liquidityUsd,
         volume_24h = @volume24h,
         txns_24h = @txns24h,
@@ -518,70 +520,19 @@ function createSqliteStorage(cwd: string): StorageAdapter {
     return new Map([...totals].map(([snapshotId, value]) => [snapshotId, value.total / Math.max(1, value.count)]));
   }
 
-  function previousScoreSamples(snapshotId: number, minBalanceUsd: number, favoriteKeys: string[]): Map<string, ScoreHistorySample[]> {
-    const snapshots = db.prepare(
-      `SELECT id, COALESCE(finished_at, created_at) as at
-       FROM holding_snapshots
-       WHERE id < ? AND status = 'success'
-       ORDER BY datetime(COALESCE(finished_at, created_at)) DESC, id DESC
-       LIMIT 2`,
-    ).all(snapshotId) as Array<{ id: number; at: string }>;
-    if (!snapshots.length) return new Map();
+  db.exec(`CREATE TABLE IF NOT EXISTS snapshot_market_cap_evidence (
+    snapshot_id INTEGER NOT NULL REFERENCES holding_snapshots(id) ON DELETE CASCADE,
+    token_key TEXT NOT NULL, evidence TEXT NOT NULL, PRIMARY KEY(snapshot_id, token_key)
+  )`);
 
-    const snapshotPlaceholders = snapshots.map(() => "?").join(", ");
-    const favoritePlaceholders = favoriteKeys.map(() => "?").join(", ");
-    const favoriteExpression = favoriteKeys.length
-      ? `SUM(CASE WHEN entityKey IN (${favoritePlaceholders}) THEN balanceUsd ELSE 0 END)`
-      : "0";
-    const favoriteCountExpression = favoriteKeys.length
-      ? `SUM(CASE WHEN entityKey IN (${favoritePlaceholders}) THEN 1 ELSE 0 END)`
-      : "0";
-    const rows = db.prepare(
-      `WITH canonical AS (
-         SELECT rh.snapshot_id as snapshotId, rh.token_key as tokenKey, lower(e.entity_name) as entityKey,
-                MAX(rh.balance_usd) as balanceUsd,
-                MAX(CAST(NULLIF(rh.balance, '') AS REAL)) as tokenAmount
-         FROM raw_holdings rh
-         INNER JOIN entities e ON e.id = rh.entity_id
-         LEFT JOIN token_blacklist bl ON bl.token_key = rh.token_key AND bl.is_active = 1
-         WHERE rh.snapshot_id IN (${snapshotPlaceholders}) AND rh.balance_usd >= ? AND bl.id IS NULL
-         GROUP BY rh.snapshot_id, rh.token_key, lower(e.entity_name)
-       )
-       SELECT snapshotId, tokenKey, ROUND(SUM(balanceUsd), 2) as holdingsUsd,
-              SUM(tokenAmount) as tokenAmount, COUNT(*) as smwIn,
-              ${favoriteExpression} as favoriteHoldingsUsd,
-              ${favoriteCountExpression} as favoriteEntityCount
-       FROM canonical
-       GROUP BY snapshotId, tokenKey`,
-    ).all(...snapshots.map((snapshot) => snapshot.id), minBalanceUsd, ...favoriteKeys, ...favoriteKeys) as Array<{
-      snapshotId: number;
-      tokenKey: string;
-      holdingsUsd: number;
-      tokenAmount: number;
-      smwIn: number;
-      favoriteHoldingsUsd: number;
-      favoriteEntityCount: number;
-    }>;
-    const snapshotById = new Map(snapshots.map((snapshot) => [snapshot.id, snapshot]));
-    const grouped = new Map<string, ScoreHistorySample[]>();
-    for (const row of rows) {
-      const snapshot = snapshotById.get(row.snapshotId);
-      if (!snapshot) continue;
-      const list = grouped.get(row.tokenKey) || [];
-      list.push({
-        tokenAmount: Number(row.tokenAmount || 0),
-        holdingsUsd: Number(row.holdingsUsd || 0),
-        smwIn: Number(row.smwIn || 0),
-        favoriteEntityCount: Number(row.favoriteEntityCount || 0),
-        favoriteHoldingsUsd: Number(row.favoriteHoldingsUsd || 0),
-        at: snapshot.at,
-      });
-      grouped.set(row.tokenKey, list);
-    }
-    for (const list of grouped.values()) {
-      list.sort((left, right) => Date.parse(right.at) - Date.parse(left.at));
-    }
-    return grouped;
+  function loadScoreState(snapshotIds: number[], favorites: string[], tokenKey?: string) {
+    const ids = [...new Set(snapshotIds)];
+    const placeholders = ids.map(() => "?").join(",");
+    const snapshots = db.prepare(`SELECT id, status, COALESCE(finished_at, created_at) as at FROM holding_snapshots WHERE id IN (${placeholders})`).all(...ids) as Array<{ id: number; status: string; at: string }>;
+    const positions = db.prepare(`SELECT rh.snapshot_id as snapshotId, rh.token_key as tokenKey, lower(e.entity_name) as entityKey, rh.balance as tokenAmount, rh.balance_usd as balanceUsd FROM raw_holdings rh INNER JOIN entities e ON e.id = rh.entity_id WHERE rh.snapshot_id IN (${placeholders}) ${tokenKey ? "AND rh.token_key = ?" : ""}`).all(...ids, ...(tokenKey ? [tokenKey] : [])) as any[];
+    const runs = db.prepare(`SELECT r.snapshot_id as snapshotId, lower(e.entity_name) as entityKey, r.status FROM entity_fetch_runs r INNER JOIN entities e ON e.id = r.entity_id WHERE r.snapshot_id IN (${placeholders}) ORDER BY r.id DESC`).all(...ids) as any[];
+    const evidenceRows = db.prepare(`SELECT snapshot_id as snapshotId, token_key as tokenKey, evidence FROM snapshot_market_cap_evidence WHERE snapshot_id IN (${placeholders}) ${tokenKey ? "AND token_key = ?" : ""}`).all(...ids, ...(tokenKey ? [tokenKey] : [])) as Array<{ snapshotId: number; tokenKey: string; evidence: string }>;
+    return { observations: buildObservationIndex(snapshots, positions, runs, favorites), evidence: new Map(evidenceRows.map(r => [`${r.snapshotId}:${r.tokenKey}`, JSON.parse(r.evidence) as MarketCapEvidence])) };
   }
 
   return {
@@ -713,20 +664,25 @@ function createSqliteStorage(cwd: string): StorageAdapter {
 
     updateSnapshotTokenMarketData(snapshotId: number, tokenKey: string, marketData: {
       marketCap: number | null;
+      marketCapEvidence?: MarketCapEvidence;
       liquidityUsd: number | null;
       volume24h: number | null;
       txns24h: number | null;
       tokenAgeHours: number | null;
     }): void {
-      updateMarketDataForTokenStmt.run({
-        snapshotId,
-        tokenKey,
-        marketCap: marketData.marketCap,
-        liquidityUsd: marketData.liquidityUsd,
-        volume24h: marketData.volume24h,
-        txns24h: marketData.txns24h,
-        tokenAgeHours: marketData.tokenAgeHours,
-      });
+      db.transaction(() => {
+        if (marketData.marketCapEvidence || marketData.marketCap != null) db.prepare("INSERT INTO snapshot_market_cap_evidence(snapshot_id, token_key, evidence) VALUES (?, ?, ?) ON CONFLICT(snapshot_id, token_key) DO UPDATE SET evidence = excluded.evidence").run(snapshotId, tokenKey, JSON.stringify(marketData.marketCapEvidence || legacyMarketCapEvidence(marketData.marketCap)));
+        updateMarketDataForTokenStmt.run({
+          clearMarketCap: marketData.marketCapEvidence?.status === "conflict" ? 1 : 0,
+          snapshotId,
+          tokenKey,
+          marketCap: marketData.marketCap,
+          liquidityUsd: marketData.liquidityUsd,
+          volume24h: marketData.volume24h,
+          txns24h: marketData.txns24h,
+          tokenAgeHours: marketData.tokenAgeHours,
+        });
+      })();
     },
 
     getSnapshotSummaries(): SnapshotRecord[] {
@@ -932,11 +888,9 @@ function createSqliteStorage(cwd: string): StorageAdapter {
         }) as Array<
         Omit<TokenOverviewRow, "score">
       >;
-      const currentSnapshot = db.prepare(
-        `SELECT COALESCE(finished_at, created_at) as at FROM holding_snapshots WHERE id = ?`,
-      ).get(snapshotId) as { at: string } | undefined;
       const convictionByToken = entityConvictionByToken(snapshotId, minBalanceUsd);
-      const previousByToken = previousScoreSamples(snapshotId, minBalanceUsd, favoriteEntityKeys);
+      const previousIds = (db.prepare("SELECT id FROM holding_snapshots WHERE id < ? AND status = 'success' ORDER BY id DESC LIMIT 2").all(snapshotId) as Array<{ id: number }>).map(s => s.id);
+      const scoreState = loadScoreState([snapshotId, ...previousIds], favoriteEntityKeys);
       return rows.map((row) => {
         const normalized = {
           ...row,
@@ -946,22 +900,9 @@ function createSqliteStorage(cwd: string): StorageAdapter {
           tokenAmount: Number(row.tokenAmount || 0),
           liquidityUsd: row.liquidityUsd == null ? null : Number(row.liquidityUsd),
           entityConviction: convictionByToken.get(row.tokenKey) || 1,
+          marketCapEvidence: scoreState.evidence.get(`${snapshotId}:${row.tokenKey}`),
         };
-        const previous = previousByToken.get(row.tokenKey) || [];
-        const currentSample: ScoreHistorySample = {
-          tokenAmount: normalized.tokenAmount,
-          holdingsUsd: normalized.holdingsUsd,
-          smwIn: normalized.smwIn,
-          favoriteEntityCount: normalized.favoriteEntityCount,
-          favoriteHoldingsUsd: normalized.favoriteHoldingsUsd,
-          at: currentSnapshot?.at || new Date().toISOString(),
-        };
-        const context: ScoreContext = {
-          currentAt: currentSample.at,
-          previous: previous[0],
-          previousPrevious: previous[1],
-          entityConviction: normalized.entityConviction,
-        };
+        const context = contextFromObservations(scoreState.observations, snapshotId, row.tokenKey, previousIds, favoriteEntityKeys);
         return withOpportunityScore(normalized, context);
       });
     },
@@ -1059,14 +1000,8 @@ function createSqliteStorage(cwd: string): StorageAdapter {
       const successfulIds = (db.prepare(
         "SELECT id FROM holding_snapshots WHERE status = 'success' AND (? IS NULL OR id <= ?) ORDER BY id ASC",
       ).all(asOfSnapshotId, asOfSnapshotId) as Array<{ id: number }>).map((snapshot) => snapshot.id);
-      const samplesBySnapshot = new Map<number, ScoreHistorySample>(rows.filter((row) => row.snapshotStatus === "success").map((row) => [row.snapshotId, {
-        tokenAmount: Number(row.tokenAmount || 0),
-        holdingsUsd: Number(row.holdingsUsd || 0),
-        smwIn: Number(row.smwIn || 0),
-        favoriteEntityCount: Number(row.favoriteEntityCount || 0),
-        favoriteHoldingsUsd: Number(row.favoriteHoldingsUsd || 0),
-        at: row.snapshotFinishedAt || row.snapshotCreatedAt,
-      }]));
+      const neededIds = [...new Set(rows.flatMap(row => [row.snapshotId, ...successfulIds.filter(id => id < row.snapshotId).slice(-2)]))];
+      const scoreState = loadScoreState(neededIds, favoriteEntityKeys, tokenKey);
       const convictionBySnapshot = entityConvictionForTokenAtSnapshots(
         [...new Set(rows.map((row) => row.snapshotId))],
         tokenKey,
@@ -1080,13 +1015,9 @@ function createSqliteStorage(cwd: string): StorageAdapter {
           favoriteHoldingsUsd: Number(row.favoriteHoldingsUsd || 0),
           liquidityUsd: row.liquidityUsd == null ? null : Number(row.liquidityUsd),
           entityConviction: convictionBySnapshot.get(row.snapshotId) || 1,
+          marketCapEvidence: scoreState.evidence.get(`${row.snapshotId}:${tokenKey}`),
         };
-        const scored = withOpportunityScore(normalized, {
-          currentAt: row.snapshotFinishedAt || row.snapshotCreatedAt,
-          previous: samplesBySnapshot.get(previousIds[0]),
-          previousPrevious: samplesBySnapshot.get(previousIds[1]),
-          entityConviction: normalized.entityConviction,
-        });
+        const scored = withOpportunityScore(normalized, contextFromObservations(scoreState.observations, row.snapshotId, tokenKey, previousIds, favoriteEntityKeys));
         return scored;
       });
       return historyLimit == null ? scoredRows : scoredRows.slice(-historyLimit);
