@@ -1,4 +1,4 @@
-import { queryMarketCap, coinGeckoPlatform, canonicalAddress } from "./market-cap";
+import { queryMarketCap, coinGeckoPlatform, canonicalAddress, canQueryMarketCapToken } from "./market-cap";
 import { withScoreTrajectories } from "./score-trajectory";
 import path from "node:path";
 import crypto from "node:crypto";
@@ -325,7 +325,7 @@ app.get("/api/overview", async (req, res) => {
     const favoriteEntities = await storage.getFavoriteEntityNames();
     const rows = await storage.getOverview(snapshotId, minBalanceUsd, minSmwIn, minLiquidityUsd, maxMarketCapUsd, favoriteEntities);
     res.set("Cache-Control", "private, no-store").json({
-      rows: rows.sort((left, right) => right.score - left.score || right.holdingsUsd - left.holdingsUsd),
+      rows: rows.map(row => ({ ...row, marketCapCheckAvailable: row.tokenAddress ? canQueryMarketCapToken({ tokenAddress: row.tokenAddress, chainId: row.chainId, networkName: row.networkName }) : false })).sort((left, right) => right.score - left.score || right.holdingsUsd - left.holdingsUsd),
     });
   } catch (error) {
     sendServerError(res, error);
@@ -340,8 +340,8 @@ let lastMarketCapCheck = 0;
 app.get("/api/market-cap", async (req, res) => {
   const token = { tokenAddress: String(req.query.tokenAddress || "").trim(), chainId: req.query.chainId == null ? null : Number(req.query.chainId), networkName: String(req.query.networkName || "").trim() };
   const platform = coinGeckoPlatform(token);
-  if (!platform || !(platform === "solana" ? /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(token.tokenAddress) : /^0x[0-9a-fA-F]{40}$/.test(token.tokenAddress))) { res.status(400).json({ error: "A supported chain and valid token contract are required" }); return; }
-  const key = `${platform}:${canonicalAddress(token.tokenAddress)}`;
+  if (!canQueryMarketCapToken(token)) { res.status(400).json({ error: "A supported chain and valid token contract are required" }); return; }
+  const key = `${platform || "unknown"}:${canonicalAddress(token.tokenAddress)}`;
   const cached = marketCapCache.get(key);
   if (cached && Date.now() - cached.at < 600000) { res.set("Cache-Control", "private, no-store").json({ ...cached.value, live: true, affectsSnapshotScore: false }); return; }
   if (Date.now() - lastMarketCapCheck < 1500) { res.status(429).set("Retry-After", "2").json({ error: "Wait two seconds before another market-cap check" }); return; }

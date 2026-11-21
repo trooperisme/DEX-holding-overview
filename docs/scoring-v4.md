@@ -74,6 +74,15 @@ Bonus = clamp(0.55 \* clipped log2(quantity ratio)/day
 CoinGecko coin identity resolves by platform+contract; CMC resolves by contract
 plus chain metadata (including alternative-chain contract arrays), then numeric
 CMC ID. EVM addresses are case-insensitive; Solana addresses retain case.
+When the holding chain is Unknown, resolve exact contract matches across source
+metadata only when the asset identity is unique; reject ambiguous assets or
+provider chain disagreement. Never guess Ethereum or rewrite the holding chain.
+This identifies asset-level MCAP, not the historical holding network or pool age.
+Such unique-contract matches receive half of the usual valuation influence
+budget, even when two sources agree; this is not a calibrated probability.
+Explicit unsupported chain IDs are not ignored. The UI disables unsupported
+contract/chain checks.
+
 Accept only positive market-cap fields with source timestamps no older than six
 hours. If CG/CMC differ by >25% of the larger value, mark conflict and infer no
 valuation upside; do not average away the discrepancy. Agreement is not proof

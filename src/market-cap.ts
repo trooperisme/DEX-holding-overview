@@ -56,11 +56,102 @@ const PLATFORM_ALIASES: Record<string, string> = {
   gnosis: "xdai",
 };
 export function coinGeckoPlatform(token: MarketCapToken): string | null {
+  if (token.chainId != null) return PLATFORM[token.chainId] || null;
+  return PLATFORM_ALIASES[token.networkName.toLowerCase()] || null;
+}
+function unknownChain(token: MarketCapToken): boolean {
   return (
-    (token.chainId != null ? PLATFORM[token.chainId] : null) ||
-    PLATFORM_ALIASES[token.networkName.toLowerCase()] ||
-    null
+    token.chainId == null &&
+    ["", "unknown"].includes(token.networkName.trim().toLowerCase())
   );
+}
+export function canQueryMarketCapToken(token: MarketCapToken): boolean {
+  const platform = coinGeckoPlatform(token);
+  if (!platform && !unknownChain(token)) return false;
+  return platform === "solana"
+    ? /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(token.tokenAddress)
+    : platform
+      ? /^0x[0-9a-fA-F]{40}$/.test(token.tokenAddress)
+      : /^0x[0-9a-fA-F]{40}$/.test(token.tokenAddress) ||
+        /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(token.tokenAddress);
+}
+function cgIdentityIndex(
+  coins: Json[],
+): Map<string, Array<{ id: string; platform: string }>> {
+  const index = new Map<string, Array<{ id: string; platform: string }>>();
+  for (const coin of coins)
+    for (const [platform, address] of Object.entries(coin.platforms || {})) {
+      if (typeof address !== "string" || !address) continue;
+      const key = canonicalAddress(address);
+      const entries = index.get(key) || [];
+      entries.push({ id: String(coin.id), platform });
+      index.set(key, entries);
+    }
+  return index;
+}
+function cgIdentity(
+  token: MarketCapToken,
+  index: ReturnType<typeof cgIdentityIndex>,
+) {
+  const platform = coinGeckoPlatform(token);
+  if (!canQueryMarketCapToken(token))
+    return { id: null, platforms: [] as string[], ambiguous: false };
+  const entries = (
+    index.get(canonicalAddress(token.tokenAddress)) || []
+  ).filter((e) => !platform || e.platform === platform);
+  const ids = [...new Set(entries.map((e) => e.id))];
+  return {
+    id: ids.length === 1 ? ids[0] : null,
+    platforms: [...new Set(entries.map((e) => e.platform))],
+    ambiguous: ids.length > 1,
+  };
+}
+let coinListCache: { at: number; coins: Json[] } | null = null;
+async function coinList(
+  c: ReturnType<typeof client>,
+  bypassCache: boolean,
+): Promise<Json[]> {
+  if (!c.cgEnabled) return [];
+  if (!bypassCache && coinListCache && c.now() - coinListCache.at < 6 * 3600000)
+    return coinListCache.coins;
+  const data = await c.get("cg", "/coins/list?include_platform=true");
+  const coins = Array.isArray(data) ? data : [];
+  if (!bypassCache && coins.length) coinListCache = { at: c.now(), coins };
+  return coins;
+}
+function identityQuote(
+  quote: MarketCapQuote,
+  token: MarketCapToken,
+  cgPlatforms: string[],
+  cmcPlatforms: string[],
+  ambiguous = false,
+): MarketCapQuote {
+  quote.marketCapEvidence.identityMatch = unknownChain(token)
+    ? "unique-contract"
+    : "chain-contract";
+  if (
+    ambiguous ||
+    (quote.marketCapEvidence.coingecko &&
+      quote.marketCapEvidence.coinmarketcap &&
+      !cgPlatforms.some((p) => cmcPlatforms.includes(p)))
+  ) {
+    return {
+      marketCap: null,
+      marketCapEvidence: {
+        ...quote.marketCapEvidence,
+        status: "conflict",
+        identityMatch: "ambiguous",
+        source: "none",
+        note: "Contract identity is ambiguous across assets or chains; no market cap is selected.",
+      },
+    };
+  }
+  if (unknownChain(token))
+    quote.marketCapEvidence.note =
+      quote.marketCap != null
+        ? "Asset resolved by exact contract when unique; the holdings chain remains unknown."
+        : "An unambiguous market cap could not be verified; the holdings chain remains unknown.";
+  return quote;
 }
 export function marketCapTokenKey(token: MarketCapToken): string {
   return `${coinGeckoPlatform(token) || token.networkName.toLowerCase()}:${canonicalAddress(token.tokenAddress.trim())}`;
@@ -162,26 +253,34 @@ function fresh(at: unknown, now: number): boolean {
     Number.isFinite(time) && time <= now + 300000 && now - time <= 6 * 3600000
   );
 }
-function cmcContractMatches(asset: Json, token: MarketCapToken): boolean {
-  const address = canonicalAddress(token.tokenAddress),
-    platform = coinGeckoPlatform(token);
+function cmcContractPlatforms(asset: Json, token: MarketCapToken): string[] {
+  const address = canonicalAddress(token.tokenAddress);
   const contracts: Json[] = Array.isArray(asset.contract_address)
     ? asset.contract_address
     : [];
-  return (
-    contracts.some((c) => {
+  const platforms = contracts
+    .filter(
+      (c) => canonicalAddress(String(c.contract_address || "")) === address,
+    )
+    .map((c) => {
       const p = c.platform?.coin || c.platform || {};
       const slug = String(p.slug || p.name || "").toLowerCase();
-      return (
-        canonicalAddress(String(c.contract_address || "")) === address &&
-        (slug === platform || PLATFORM_ALIASES[slug] === platform)
-      );
-    }) ||
-    (canonicalAddress(String(asset.platform?.token_address || "")) ===
-      address &&
-      (asset.platform?.slug === platform ||
-        PLATFORM_ALIASES[String(asset.platform?.slug)] === platform))
-  );
+      return PLATFORM_ALIASES[slug] || slug;
+    })
+    .filter(Boolean);
+  if (
+    canonicalAddress(String(asset.platform?.token_address || "")) === address
+  ) {
+    const slug = String(asset.platform?.slug || "").toLowerCase();
+    if (slug) platforms.push(PLATFORM_ALIASES[slug] || slug);
+  }
+  return [...new Set(platforms)];
+}
+function cmcContractMatches(asset: Json, token: MarketCapToken): boolean {
+  if (!canQueryMarketCapToken(token)) return false;
+  const platforms = cmcContractPlatforms(asset, token),
+    platform = coinGeckoPlatform(token);
+  return platform ? platforms.includes(platform) : platforms.length > 0;
 }
 function cmcQuoteRows(payload: Json | null): Json[] {
   return !payload
@@ -207,16 +306,33 @@ export async function queryMarketCap(
   const c = client(options),
     platform = coinGeckoPlatform(token),
     now = c.now();
-  if (!platform)
+  if (!canQueryMarketCapToken(token))
     return {
       marketCap: null,
       marketCapEvidence: legacyMarketCapEvidence(null),
     };
+  let cgPlatforms: string[] = [],
+    ambiguous = false;
   const [cg, cmcInfo] = await Promise.all([
-    c.get(
-      "cg",
-      `/coins/${encodeURIComponent(platform)}/contract/${encodeURIComponent(token.tokenAddress)}?localization=false&tickers=false`,
-    ),
+    (async () => {
+      if (platform)
+        return c.get(
+          "cg",
+          `/coins/${encodeURIComponent(platform)}/contract/${encodeURIComponent(token.tokenAddress)}?localization=false&tickers=false`,
+        );
+      const identity = cgIdentity(
+        token,
+        cgIdentityIndex(await coinList(c, Boolean(options.fetcher))),
+      );
+      cgPlatforms = identity.platforms;
+      ambiguous = identity.ambiguous;
+      return identity.id
+        ? c.get(
+            "cg",
+            `/coins/${encodeURIComponent(identity.id)}?localization=false&tickers=false`,
+          )
+        : null;
+    })(),
     c.get(
       "cmc",
       `/v2/cryptocurrency/info?address=${encodeURIComponent(token.tokenAddress)}`,
@@ -224,17 +340,29 @@ export async function queryMarketCap(
   ]);
   const cgMatches =
     cg &&
-    canonicalAddress(String(cg.platforms?.[platform] || "")) ===
-      canonicalAddress(token.tokenAddress);
+    Object.entries(cg.platforms || {}).some(
+      ([p, a]) =>
+        (!platform || p === platform) &&
+        canonicalAddress(String(a)) === canonicalAddress(token.tokenAddress),
+    );
+  if (cgMatches)
+    cgPlatforms = Object.entries(cg!.platforms || {})
+      .filter(
+        ([p, a]) =>
+          (!platform || p === platform) &&
+          canonicalAddress(String(a)) === canonicalAddress(token.tokenAddress),
+      )
+      .map(([p]) => p);
   const cgValue =
-    cgMatches && fresh(cg.last_updated, now)
-      ? positive(cg.market_data?.market_cap?.usd)
+    cgMatches && fresh(cg!.last_updated, now)
+      ? positive(cg!.market_data?.market_cap?.usd)
       : null;
   const matches = cmcQuoteRows(cmcInfo).filter((a) =>
     cmcContractMatches(a, token),
   );
+  ambiguous ||= matches.length > 1;
   const quote =
-    matches.length === 1
+    !ambiguous && matches.length === 1
       ? await c.get(
           "cmc",
           `/v3/cryptocurrency/quotes/latest?id=${matches[0].id}&convert=USD`,
@@ -243,10 +371,16 @@ export async function queryMarketCap(
   const cmcValue = cmcQuoteRows(quote).find(
     (a) => Number(a.id) === Number(matches[0]?.id),
   );
-  return selectMarketCap(
-    cgValue,
-    cmcValue ? cmcCap(cmcValue, now) : null,
-    new Date(now).toISOString(),
+  return identityQuote(
+    selectMarketCap(
+      cgValue,
+      cmcValue ? cmcCap(cmcValue, now) : null,
+      new Date(now).toISOString(),
+    ),
+    token,
+    cgPlatforms,
+    matches.length === 1 ? cmcContractPlatforms(matches[0], token) : [],
+    ambiguous,
   );
 }
 
@@ -266,7 +400,7 @@ export async function fetchSnapshotMarketCaps(
     ({ cg, cmc } = indexCache);
   else {
     const [cgData, cmcData] = await Promise.all([
-      c.get("cg", "/coins/list?include_platform=true"),
+      coinList(c, Boolean(options.fetcher)),
       c.get(
         "cmc",
         "/v1/cryptocurrency/map?limit=5000&sort=cmc_rank&aux=platform",
@@ -280,18 +414,25 @@ export async function fetchSnapshotMarketCaps(
   const wanted = new Map(tokens.map((t) => [marketCapTokenKey(t), t]));
   const cgIds = new Map<string, string>(),
     cmcIds = new Map<string, number>();
-  for (const a of cg)
-    for (const [p, address] of Object.entries(a.platforms || {})) {
-      if (typeof address !== "string" || !address) continue;
-      const key = `${p}:${canonicalAddress(address)}`;
-      if (wanted.has(key)) cgIds.set(key, String(a.id));
-    }
-  const alternativeIds = new Set<number>();
+  const cgIndex = cgIdentityIndex(cg),
+    cgPlatforms = new Map<string, string[]>(),
+    cmcPlatforms = new Map<string, string[]>(),
+    ambiguousKeys = new Set<string>();
+  for (const [key, token] of wanted) {
+    const identity = cgIdentity(token, cgIndex);
+    if (identity.id) cgIds.set(key, identity.id);
+    if (identity.ambiguous) ambiguousKeys.add(key);
+    cgPlatforms.set(key, identity.platforms);
+  }
+  const alternativeIds = new Set<number>(),
+    slugs = new Set(cgIds.values());
   for (const a of cmc) {
-    const platform = a.platform?.slug;
-    const key = `${PLATFORM_ALIASES[platform] || platform}:${canonicalAddress(String(a.platform?.token_address || ""))}`;
-    if (wanted.has(key)) cmcIds.set(key, Number(a.id));
-    if ([...cgIds.values()].includes(a.slug)) alternativeIds.add(Number(a.id));
+    for (const [key, token] of wanted)
+      if (coinGeckoPlatform(token) && cmcContractMatches(a, token)) {
+        cmcIds.set(key, Number(a.id));
+        cmcPlatforms.set(key, cmcContractPlatforms(a, token));
+      }
+    if (slugs.has(a.slug)) alternativeIds.add(Number(a.id));
   }
   const batches = <T>(items: T[], n: number): T[][] =>
     Array.from({ length: Math.ceil(items.length / n) }, (_, i) =>
@@ -304,7 +445,12 @@ export async function fetchSnapshotMarketCaps(
     );
     for (const a of cmcQuoteRows(info))
       for (const [key, token] of wanted)
-        if (cmcContractMatches(a, token)) cmcIds.set(key, Number(a.id));
+        if (cmcContractMatches(a, token)) {
+          if (cmcIds.has(key) && cmcIds.get(key) !== Number(a.id))
+            ambiguousKeys.add(key);
+          cmcIds.set(key, Number(a.id));
+          cmcPlatforms.set(key, cmcContractPlatforms(a, token));
+        }
   }
   const cgCaps = new Map<string, number>(),
     cmcCaps = new Map<number, number>();
@@ -329,12 +475,18 @@ export async function fetchSnapshotMarketCaps(
     }
   }
   return new Map(
-    [...wanted].map(([key]) => [
+    [...wanted].map(([key, token]) => [
       key,
-      selectMarketCap(
-        cgCaps.get(cgIds.get(key) || "") || null,
-        cmcCaps.get(cmcIds.get(key) || -1) || null,
-        new Date(now).toISOString(),
+      identityQuote(
+        selectMarketCap(
+          cgCaps.get(cgIds.get(key) || "") || null,
+          cmcCaps.get(cmcIds.get(key) || -1) || null,
+          new Date(now).toISOString(),
+        ),
+        token,
+        cgPlatforms.get(key) || [],
+        cmcPlatforms.get(key) || [],
+        ambiguousKeys.has(key),
       ),
     ]),
   );

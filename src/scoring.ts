@@ -75,11 +75,15 @@ export function logInterpolate(
   return anchors.at(-1)![1];
 }
 export function marketCapConfidence(evidence: MarketCapEvidence): number {
-  return evidence.status === "cross-checked"
-    ? 1
-    : evidence.status === "single-source"
-      ? 0.75
-      : 0;
+  const sourceBudget =
+    evidence.status === "cross-checked"
+      ? 1
+      : evidence.status === "single-source"
+        ? 0.75
+        : 0;
+  return (
+    sourceBudget * (evidence.identityMatch === "unique-contract" ? 0.5 : 1)
+  );
 }
 export function favoriteScoreMultiplier(value: unknown): number {
   const n = Math.max(0, Math.trunc(num(value)));
