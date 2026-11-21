@@ -131,8 +131,8 @@ function identityQuote(
     : "chain-contract";
   if (
     ambiguous ||
-    (quote.marketCapEvidence.coingecko &&
-      quote.marketCapEvidence.coinmarketcap &&
+    (cgPlatforms.length > 0 &&
+      cmcPlatforms.length > 0 &&
       !cgPlatforms.some((p) => cmcPlatforms.includes(p)))
   ) {
     return {
@@ -429,6 +429,8 @@ export async function fetchSnapshotMarketCaps(
   for (const a of cmc) {
     for (const [key, token] of wanted)
       if (coinGeckoPlatform(token) && cmcContractMatches(a, token)) {
+        if (cmcIds.has(key) && cmcIds.get(key) !== Number(a.id))
+          ambiguousKeys.add(key);
         cmcIds.set(key, Number(a.id));
         cmcPlatforms.set(key, cmcContractPlatforms(a, token));
       }

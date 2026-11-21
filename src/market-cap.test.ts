@@ -364,3 +364,88 @@ test("bulk enrichment also resolves unknown-chain exact contracts", async () => 
     "cross-checked",
   );
 });
+
+test("identity disagreement is rejected even when one provider has no circulating market cap", async () => {
+  const quote = await queryMarketCap(
+    { ...token, chainId: null, networkName: "Unknown" },
+    options(
+      fake((url) => {
+        if (url.includes("/coins/list"))
+          return [
+            { id: "asset-a", platforms: { ethereum: token.tokenAddress } },
+          ];
+        if (url.includes("coingecko"))
+          return {
+            id: "asset-a",
+            platforms: { ethereum: token.tokenAddress },
+            last_updated: at,
+            market_data: { market_cap: { usd: null } },
+          };
+        if (url.includes("/info?"))
+          return {
+            data: {
+              "7": {
+                id: 7,
+                platform: { slug: "base", token_address: token.tokenAddress },
+              },
+            },
+          };
+        return {
+          data: [
+            {
+              id: 7,
+              quote: [{ symbol: "USD", market_cap: 1e6, last_updated: at }],
+            },
+          ],
+        };
+      }),
+    ),
+  );
+  assert.equal(quote.marketCap, null);
+  assert.equal(quote.marketCapEvidence.status, "conflict");
+});
+
+test("bulk metadata with two assets on the same chain is not resolved by last-write wins", async () => {
+  const result = await fetchSnapshotMarketCaps(
+    [token],
+    options(
+      fake((url) => {
+        if (url.includes("/coins/list")) return [];
+        if (url.includes("/cryptocurrency/map"))
+          return {
+            data: [
+              {
+                id: 7,
+                slug: "a",
+                platform: {
+                  slug: "ethereum",
+                  token_address: token.tokenAddress,
+                },
+              },
+              {
+                id: 8,
+                slug: "b",
+                platform: {
+                  slug: "ethereum",
+                  token_address: token.tokenAddress,
+                },
+              },
+            ],
+          };
+        return {
+          data: [
+            {
+              id: 8,
+              quote: [{ symbol: "USD", market_cap: 1e6, last_updated: at }],
+            },
+          ],
+        };
+      }),
+    ),
+  );
+  assert.equal(result.get(marketCapTokenKey(token))?.marketCap, null);
+  assert.equal(
+    result.get(marketCapTokenKey(token))?.marketCapEvidence.status,
+    "conflict",
+  );
+});
