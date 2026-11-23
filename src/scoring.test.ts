@@ -36,7 +36,8 @@ test("holding attention floor protects large positions when market metadata is m
     txns24h: null,
   });
 
-  assert.ok(scored.baseScore >= 300_000 && scored.baseScore <= 500_000);
+  assert.ok(scored.scoreComponents.attentionFloor >= 300_000 && scored.scoreComponents.attentionFloor <= 500_000);
+  assert.ok(scored.baseScore >= scored.scoreComponents.attentionFloor);
   assert.ok(scored.score >= scored.baseScore);
 });
 
@@ -135,7 +136,7 @@ test("matched entity accumulation increases the score", () => {
 
   assert.ok(scored.momentumBoost > 0);
   assert.ok(scored.score > scored.baseScore);
-  assert.equal(scored.scoreVersion, "v4");
+  assert.equal(scored.scoreVersion, "v4.1");
 });
 
 test("favorite convergence reaches the v4 calibration multiplier", () => {

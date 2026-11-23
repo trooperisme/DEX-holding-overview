@@ -136,7 +136,7 @@ test("overview API applies favorite entity scoring", async () => {
       assert.equal(payload.rows[0].favoriteScoreMultiplier, 1.35);
       assert.ok(payload.rows[0].score >= payload.rows[0].baseScore);
       assert.ok(Number.isFinite(payload.rows[0].score));
-      assert.equal(payload.rows[0].scoreVersion, "v4");
+      assert.equal(payload.rows[0].scoreVersion, "v4.1");
       const invalidContract = await request(server, "/api/market-cap?chainId=1&tokenAddress=not-a-contract", { headers: { cookie: sessionCookie } });
       assert.equal(invalidContract.status, 400);
       const protectedQuote = await request(server, "/api/market-cap?chainId=1&tokenAddress=not-a-contract");
