@@ -2482,3 +2482,11 @@ html[data-theme="dark"] body.zagreb-dashboard .trend-factor-table .is-neutral { 
   .zagreb-dashboard .signals-table .trend-factor-table :is(th, td):nth-child(3) { width: 25%; }
 }
 .zagreb-dashboard .drilldown-detail { white-space: normal; }
+/* Keep mobile parameter labels readable instead of breaking inside words. */
+@media (max-width: 900px) {
+  .zagreb-dashboard .signals-table .trend-factor-table th,
+  .zagreb-dashboard .signals-table .trend-factor-table td { font-size: .75rem; letter-spacing: normal; padding: .55rem .25rem; }
+  .zagreb-dashboard .signals-table .trend-factor-table th { overflow-wrap: normal; word-break: normal; }
+  .zagreb-dashboard .signals-table .trend-factor-table :is(th, td):nth-child(1) { width: 36%; }
+  .zagreb-dashboard .signals-table .trend-factor-table :is(th, td):nth-child(2) { width: 39%; }
+}
