@@ -5,7 +5,9 @@ import vm from "node:vm";
 import test from "node:test";
 function dashboard(source?: string) {
   const node = { addEventListener() {}, value: "", classList: { add() {}, remove() {} } };
-  const context = vm.createContext({ document: { getElementById: () => node, querySelector: () => node, querySelectorAll: () => [], addEventListener() {} }, Intl, console });
+  const nodes = new Map();
+  const getNode = (id: string) => { if (!nodes.has(id)) nodes.set(id, {...node}); return nodes.get(id); };
+  const context = vm.createContext({ document: { getElementById: getNode, querySelector: () => node, querySelectorAll: () => [], addEventListener() {} }, Intl, console, URLSearchParams, DOMException });
   vm.runInContext((source || fs.readFileSync(path.resolve(__dirname, "../dashboard/main.js"), "utf8")).replace(/\ninit\(\);\s*$/, ""), context);
   return context;
 }
@@ -82,4 +84,16 @@ test("raw increases, decreases and flat changes have separate signed styles", ()
   assert.match(html, /trend-factor-delta is-neutral">0.0%/);
   assert.match(html, /td class="is-positive"[^>]*>\+50 pts/);
   assert.match(html, /td class="is-negative"[^>]*>−20 pts/);
+});
+
+test("successful snapshot load clears its own loading banner without hiding another message", async () => {
+  const c=dashboard();
+  c.AbortController=AbortController;
+  vm.runInContext(`state.selectedSnapshotId=164; fetchJson=async()=>({rows:[]}); renderTable=()=>{}; setOverviewAction=()=>{}; els.minBalanceInput.value='111'; els.minSmwInput.value='1'; els.statusBanner.textContent='Loading snapshot…';`,c);
+  assert.equal(await vm.runInContext(`loadOverview({loadingLabel:'Loading snapshot…'})`,c),true);
+  assert.equal(vm.runInContext('els.statusBanner.textContent',c),'');
+  assert.equal(vm.runInContext('els.statusBanner.hidden',c),true);
+  vm.runInContext(`els.statusBanner.hidden=false; els.statusBanner.textContent='Another operation';`,c);
+  await vm.runInContext(`loadOverview({loadingLabel:'Loading snapshot…'})`,c);
+  assert.equal(vm.runInContext('els.statusBanner.textContent',c),'Another operation');
 });
