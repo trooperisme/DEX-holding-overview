@@ -1270,6 +1270,7 @@ async function loadOverview(options = {}) {
     els.tableSubtitle.textContent = `Snapshot #${state.selectedSnapshotId} filtered at ${fmtUsd(minBalanceUsd)} minimum entity balance, SMW In >= ${minSmwIn}, verified liquidity >= ${fmtUsd(minLiquidityUsd)}, 24h volume >= ${fmtUsd(1000)}, 24h txns >= 11 when available, and ${marketCapConstraint}.`;
     renderTable();
     if (successMessage) setBanner(successMessage, "success");
+    else if (els.statusBanner.textContent === loadingLabel) setBanner("");
     return true;
   } catch (error) {
     if (error instanceof DOMException && error.name === "AbortError") return false;
