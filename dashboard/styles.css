@@ -2432,3 +2432,53 @@ html[data-theme="dark"] body.zagreb-dashboard .signals-table tbody tr.signal-row
 .trajectory-summary { display: flex; flex-wrap: wrap; gap: .65rem 1.25rem; padding: 1rem; margin: .75rem 0; border: 1px solid var(--border, #374151); border-radius: 12px; }
 .trajectory-summary strong { flex-basis: 100%; }
 .trajectory-summary p { flex-basis: 100%; margin: 0; font-size: .85rem; line-height: 1.5; }
+
+/* Compact, three-column score explanation. */
+.trend-factor-scroll { overflow-x: auto; }
+.trend-factor-table { width: 100%; min-width: 0; border-collapse: collapse; font-size: .88rem; }
+.trend-factor-table th, .trend-factor-table td { padding: .6rem .75rem; border-bottom: 1px solid var(--border, #53584b); text-align: left; white-space: normal; }
+.trend-factor-table thead th { font-size: .78rem; opacity: .75; }
+.trend-factor-table th:first-child { width: 27%; }
+.trend-factor-table th:last-child, .trend-factor-table td:last-child { text-align: right; width: 22%; white-space: nowrap; }
+.trend-factor-table tbody tr:last-child > * { border-bottom: 0; }
+
+
+/* Override the outer holdings table rules inside its nested drilldown. */
+.zagreb-dashboard table.trend-factor-table { min-width: 0; width: 100%; table-layout: fixed; }
+.zagreb-dashboard .trend-factor-table th, .zagreb-dashboard .trend-factor-table td { padding: .6rem .75rem; border-top: 0; overflow-wrap: anywhere; }
+.zagreb-dashboard .trend-factor-table tbody th { background: transparent; color: inherit; font: inherit; font-weight: 600; text-transform: none; }
+.zagreb-dashboard .trend-factor-table thead th { background: transparent; color: inherit; font: inherit; font-weight: 600; text-transform: none; }
+
+.trend-factor-change { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: .25rem .75rem; }
+.trend-factor-delta { font-weight: 800; white-space: nowrap; }
+body.zagreb-dashboard .trend-factor-table .is-positive { color: #228a4b; font-weight: 800; }
+body.zagreb-dashboard .trend-factor-table .is-negative { color: #bd4935; font-weight: 800; }
+body.zagreb-dashboard .trend-factor-table .is-neutral { color: #696858; font-weight: 800; }
+html[data-theme="dark"] body.zagreb-dashboard .trend-factor-table .is-positive { color: #8ddd9e; }
+html[data-theme="dark"] body.zagreb-dashboard .trend-factor-table .is-negative { color: #e47c66; }
+html[data-theme="dark"] body.zagreb-dashboard .trend-factor-table .is-neutral { color: #b8bba8; }
+
+@media (max-width: 900px) {
+  .zagreb-dashboard .drilldown-detail { min-width: 0; width: calc(100vw - 60px); box-sizing: border-box; padding: 12px; }
+  .zagreb-dashboard .drilldown-detail__header, .zagreb-dashboard .trend-panel__header { flex-wrap: wrap; }
+  .zagreb-dashboard .trend-explain { min-width: 0; padding: 10px; }
+  .zagreb-dashboard .trend-explain__header { flex-wrap: wrap; }
+  .zagreb-dashboard .trend-factor-table th, .zagreb-dashboard .trend-factor-table td { padding: .55rem .35rem; font-size: .78rem; white-space: normal; }
+  .zagreb-dashboard .trend-factor-table th:first-child { width: 28%; }
+  .zagreb-dashboard .trend-factor-table th:last-child, .zagreb-dashboard .trend-factor-table td:last-child { width: 25%; }
+  .zagreb-dashboard .trend-factor-change { gap: .2rem; }
+  .zagreb-dashboard .score-chart { display: block; min-height: 0; }
+  .zagreb-dashboard .trend-toggle { flex-wrap: wrap; }
+}
+/* The outer signal table's 280px token-name column must not leak into this table. */
+.zagreb-dashboard .signals-table .trend-factor-table th,
+.zagreb-dashboard .signals-table .trend-factor-table td { min-width: 0; max-width: none; overflow: visible; }
+.zagreb-dashboard .signals-table .trend-factor-table :is(th, td):nth-child(1) { width: 27%; }
+.zagreb-dashboard .signals-table .trend-factor-table :is(th, td):nth-child(2) { width: 51%; }
+.zagreb-dashboard .signals-table .trend-factor-table :is(th, td):nth-child(3) { width: 22%; }
+@media (max-width: 900px) {
+  .zagreb-dashboard .signals-table .trend-factor-table :is(th, td):nth-child(1) { width: 28%; }
+  .zagreb-dashboard .signals-table .trend-factor-table :is(th, td):nth-child(2) { width: 47%; }
+  .zagreb-dashboard .signals-table .trend-factor-table :is(th, td):nth-child(3) { width: 25%; }
+}
+.zagreb-dashboard .drilldown-detail { white-space: normal; }

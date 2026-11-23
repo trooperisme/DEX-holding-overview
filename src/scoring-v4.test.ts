@@ -182,3 +182,13 @@ test("unknown holding-chain matches receive a lower valuation influence budget",
     1,
   );
 });
+
+test("v4.1 strengthens substantial holdings without changing dust or single-small-holder safeguards", () => {
+  const { holdingsSizeBonus } = require('./scoring');
+  assert.equal(holdingsSizeBonus(4500), 1);
+  assert.equal(holdingsSizeBonus(50000), 1);
+  assert.equal(holdingsSizeBonus(100000), 1.25);
+  assert.ok(holdingsSizeBonus(1000000) > holdingsSizeBonus(250000));
+  assert.equal(holdingsSizeBonus(1e15), 2.5);
+  assert.ok(computeStructuralScore({...row, holdingsUsd: 9999, smwIn: 1}) <= 75000);
+});

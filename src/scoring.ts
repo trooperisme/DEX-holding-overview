@@ -1,7 +1,7 @@
 import { TokenOverviewRow } from "./types";
 import { legacyMarketCapEvidence, MarketCapEvidence } from "./market-cap-types";
 
-export const SCORE_VERSION = "v4";
+export const SCORE_VERSION = "v4.1";
 export const SCORE_CAP = 10_000_000;
 export const SINGLE_SMALL_HOLDER_SCORE_CAP = 75_000;
 export type ScoreHistorySample = {
@@ -89,6 +89,12 @@ export function favoriteScoreMultiplier(value: unknown): number {
   const n = Math.max(0, Math.trunc(num(value)));
   return [1, 1.35, 1.8, 2.4, 2.8][Math.min(n, 4)];
 }
+// v4.1: strengthen substantial holdings smoothly, with a bounded bonus.
+// Marked USD value is not evidence of a new purchase.
+export function holdingsSizeBonus(holdingsUsd: number, weight = 0.25): number {
+  const holdings = Math.max(0, num(holdingsUsd));
+  return Math.min(2.5, 1 + weight * Math.log2(Math.max(1, holdings / 50000)));
+}
 function structuralComponents(row: ScoreInput): ScoreComponents {
   const holdings = Math.max(0, num(row.holdingsUsd));
   const breadth = Math.max(0, num(row.smwIn));
@@ -149,7 +155,7 @@ function structuralComponents(row: ScoreInput): ScoreComponents {
         (0.65 * evidenceStrength - 0.3 * (1 - evidenceStrength)) *
           Math.exp(-days / 14);
   return {
-    capital,
+    capital: capital * holdingsSizeBonus(holdings),
     breadth:
       breadth <= 0
         ? 0

@@ -757,7 +757,8 @@ function renderSnapshots() {
 }
 
 function getPointTime(point) {
-  return point.snapshotFinishedAt || point.snapshotCreatedAt;
+  // Place snapshots by collection start, so delayed completion cannot reverse the line.
+  return point.snapshotCreatedAt || point.snapshotFinishedAt;
 }
 
 function getVisibleTrendPoints(points) {
@@ -771,7 +772,10 @@ function getScoreDeltaPct(previous, current) {
 }
 
 function buildScoreChart(points, tokenKey) {
-  const width = 760;
+  points = [...points].filter(p => Number.isFinite(Date.parse(getPointTime(p))) && Number.isFinite(Number(p.score)))
+    .sort((a, b) => Date.parse(getPointTime(a)) - Date.parse(getPointTime(b)) || a.snapshotId - b.snapshotId);
+  if (!points.length) return `<p class="empty-note">No dated score observations.</p>`;
+  const width = Math.min(760, Math.max(280, (document.documentElement?.clientWidth || 840) - 80));
   const height = 230;
   const padding = { top: 24, right: 26, bottom: 38, left: 68 };
   const chartWidth = width - padding.left - padding.right;
@@ -793,13 +797,16 @@ function buildScoreChart(points, tokenKey) {
   const xFor = (index) => padding.left + (points.length <= 1 || !(timeSpan > 0) ? chartWidth / 2 : ((timestamps[index] - firstTime) / timeSpan) * chartWidth);
   const yFor = (score) => padding.top + chartHeight - ((transform(Number(score || 0)) - minScore) / spread) * chartHeight;
   const pathPoints = points.map((point, index) => `${xFor(index).toFixed(2)},${yFor(point.score).toFixed(2)}`).join(" ");
+
   const yTicks = [maxScore, minScore + spread / 2, minScore].map(inverse);
-  const xLabels = points.length > 6
+  const xLabels = width < 480
+    ? points.filter((_, index) => index === 0 || index === points.length - 1)
+    : points.length > 6
     ? points.filter((_, index) => index === 0 || index === points.length - 1 || index === Math.floor((points.length - 1) / 2))
     : points;
 
   return `
-    <svg class="score-chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="Score trend chart using ${escapeHtml(state.trendScale)} scale">
+    <svg class="score-chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="Score trend by snapshot start time using ${escapeHtml(state.trendScale)} scale">
       <line class="score-chart__axis" x1="${padding.left}" y1="${padding.top + chartHeight}" x2="${padding.left + chartWidth}" y2="${padding.top + chartHeight}"></line>
       ${yTicks
         .map((tick) => {
@@ -825,7 +832,7 @@ function buildScoreChart(points, tokenKey) {
               data-chart-token-key="${escapeHtml(tokenKey)}"
               data-chart-snapshot-id="${escapeHtml(point.snapshotId)}"
             >
-              <title>Snapshot #${escapeHtml(point.snapshotId)} · ${escapeHtml(fmtDate(getPointTime(point)))} · ${escapeHtml(fmtScore(point.score))}</title>
+              <title>Snapshot #${escapeHtml(point.snapshotId)}${point.snapshotStatus && point.snapshotStatus !== "success" ? ` (${escapeHtml(point.snapshotStatus)})` : ""} · ${escapeHtml(fmtDate(getPointTime(point)))} · ${escapeHtml(fmtScore(point.score))}</title>
             </circle>
           `;
         })
@@ -846,45 +853,42 @@ function buildScoreChart(points, tokenKey) {
 }
 
 function buildDriverExplanation(previous, latest) {
-  const drivers = factorRows(previous, latest);
-  if (!drivers.length) {
-    return `
-      <section class="trend-explain">
-        <div>
-          <h4>What moved</h4>
-          <p>At least two snapshots are required to explain the latest score change.</p>
-        </div>
-      </section>
-    `;
-  }
-
-  return `
-    <section class="trend-explain">
-      ${latest.trajectory?.drivers?.length ? `<div class="trend-driver-grid">${latest.trajectory.drivers.map(driver => `<article class="trend-driver"><strong>${escapeHtml(driver.label)}</strong><p>${escapeHtml(fmtSignedPoints(driver.points))} pts</p></article>`).join("")}</div><p class="empty-note">Score change by factor; contributions depend on calculation order.</p>` : ""}
-      <div class="trend-explain__header">
-        <div>
-          <h4>What moved</h4>
-          <p>Raw changes between snapshots, ordered by magnitude. Other inputs can also change the attention score.</p>
-        </div>
-        <span>#${escapeHtml(previous.snapshotId)} → #${escapeHtml(latest.snapshotId)}</span>
-      </div>
-      <div class="trend-driver-grid">
-        ${drivers
-          .map(
-            (driver) => `
-              <article class="trend-driver trend-driver--${escapeHtml(driver.direction || "flat")}">
-                <div class="trend-driver__title">
-                  <strong>${escapeHtml(driver.label)}</strong>
-                  <span>${escapeHtml(fmtDeltaPct(driver.deltaPct))}</span>
-                </div>
-                <p>${escapeHtml(driver.before)} → ${escapeHtml(driver.after)}</p>
-              </article>
-            `,
-          )
-          .join("")}
-      </div>
-    </section>
-  `;
+  if (!previous) return `<section class="trend-explain"><p>At least two snapshots are required to explain the latest score change.</p></section>`;
+  const contributions = new Map((latest.trajectory?.drivers || []).map(d => [d.label, d.points]));
+  const comparable = latest.trajectory?.direction && latest.trajectory.direction !== "insufficient";
+  const signedPercent = value => {
+    const tone = value > 0 ? "is-positive" : value < 0 ? "is-negative" : "is-neutral";
+    return `<strong class="trend-factor-delta ${tone}">${escapeHtml(fmtDeltaPct(value))}</strong>`;
+  };
+  const change = (before, after, format = String) => {
+    if (before == null || after == null) return "—";
+    const pct = Number(before) === 0 ? null : (Number(after) / Number(before) - 1) * 100;
+    return `<div class="trend-factor-change"><span>${escapeHtml(format(before))} → ${escapeHtml(format(after))}</span>${signedPercent(pct)}</div>`;
+  };
+  const ratio = p => p.marketCap > 0 ? 100 * p.holdingsUsd / p.marketCap : null;
+  const factorChange = key => change(previous.scoreComponents?.[key], latest.scoreComponents?.[key], v => `${Number(v).toFixed(3)}×`);
+  const rows = [
+    ["Holdings (USD)", change(previous.holdingsUsd, latest.holdingsUsd, fmtUsd), "Holding size"],
+    ["Holders", change(previous.smwIn, latest.smwIn), "Entity convergence"],
+    ["Favorite holders", change(previous.favoriteEntityCount, latest.favoriteEntityCount), "Favorite convergence"],
+    ["Relative conviction", factorChange("conviction"), "Relative conviction"],
+    ["Market cap / source confidence", `${change(previous.marketCap, latest.marketCap, fmtUsd)} · ${escapeHtml(previous.marketCapEvidence?.status || "unknown")} → ${escapeHtml(latest.marketCapEvidence?.status || "unknown")}`, "Market cap / source confidence"],
+    ["Holdings / market cap", change(ratio(previous), ratio(latest), v => `${Number(v).toFixed(3)}%`), "Holdings / market-cap footprint"],
+    ["Pool age", change(previous.tokenAgeHours, latest.tokenAgeHours, fmtTokenAge), "Pool age"],
+    ["Liquidity (USD)", change(previous.liquidityUsd, latest.liquidityUsd, fmtUsd), "Liquidity"],
+    ["Volume 24h (USD)", change(previous.volume24h, latest.volume24h, fmtUsd), "Volume"],
+    ["Tokens held / holder momentum", `${change(previous.tokenAmount, latest.tokenAmount, fmtTokenAmount)} · matched cohort ${signedPercent(latest.holdingDynamics?.amountChangePct)}`, "Observed holder momentum"],
+  ];
+  return `<section class="trend-explain">
+    <div class="trend-explain__header"><h4>What moved</h4><span>#${escapeHtml(previous.snapshotId)} → #${escapeHtml(latest.snapshotId)}</span></div>
+    <div class="trend-factor-scroll"><table class="trend-factor-table" aria-label="Score change by parameter">
+      <thead><tr><th scope="col">Parameter</th><th scope="col">Thay đổi</th><th scope="col">Đóng góp vào score</th></tr></thead>
+      <tbody>${rows.map(([label, delta, group]) => {
+        const value = comparable ? contributions.get(group) || 0 : null;
+        const tone = value > 0 ? "is-positive" : value < 0 ? "is-negative" : "is-neutral";
+        return `<tr><th scope="row">${escapeHtml(label)}</th><td>${delta}</td><td class="${tone}" title="Fixed-order score attribution; interacting factors are not independent causes.">${value == null ? "—" : `${escapeHtml(fmtSignedPoints(value))} pts`}</td></tr>`;
+      }).join("")}</tbody>
+    </table></div></section>`;
 }
 
 const liveMarketCapChecks = new Map();
@@ -897,10 +901,10 @@ function buildMarketCapCheck(row) {
   return `<section class="trend-explain"><div class="trend-explain__header"><div><h4>Market-cap evidence</h4><p>Snapshot: ${escapeHtml(stateLabel[evidence?.status] || "Unknown")}${evidence?.status === "legacy" ? " (excluded from valuation scoring)" : ""} · ${escapeHtml(evidence?.source || "none")}${evidence?.observedAt ? ` · ${escapeHtml(fmtDate(evidence.observedAt))}` : ""}</p></div><button type="button" data-market-cap-check="${escapeHtml(row.tokenKey)}" ${pendingMarketCapChecks.has(row.tokenKey) || row.marketCapCheckAvailable === false ? "disabled" : ""}>${row.marketCapCheckAvailable === false ? "Unsupported chain / contract" : pendingMarketCapChecks.has(row.tokenKey) ? "Checking…" : "Check current MCAP"}</button></div>${live ? `<p role="status">${live.error ? escapeHtml(live.error) : `${escapeHtml(stateLabel[live.marketCapEvidence?.status] || "Unknown")}: ${escapeHtml(fmtUsdOrDash(live.marketCap))} · CoinGecko ${escapeHtml(fmtUsdOrDash(live.marketCapEvidence?.coingecko))} · CoinMarketCap ${escapeHtml(fmtUsdOrDash(live.marketCapEvidence?.coinmarketcap))}`}</p><p class="empty-note">Current lookup only; historical scores stay tied to their snapshot data.${live.marketCapEvidence?.note ? ` ${escapeHtml(live.marketCapEvidence.note)}` : ""}</p>` : ""}</section>`;
 }
 function buildTrajectorySummary(point) {
-  const t = point?.trajectory, d = point?.holdingDynamics;
+  const t = point?.trajectory;
   const rate = t?.ratePointsPerDay == null ? "—" : `${fmtSignedPoints(t.ratePointsPerDay)} pts/day`;
   const acceleration = t?.accelerationPointsPerDay2 == null ? "—" : `${fmtSignedPoints(t.accelerationPointsPerDay2)} pts/day²`;
-  return `<section class="trajectory-summary" aria-label="Score trajectory"><strong>${escapeHtml(t?.phase || "More completed observations needed")}</strong><span>Speed ${escapeHtml(rate)}</span><span>Acceleration ${escapeHtml(acceleration)}</span><p>${d?.status === "comparable" ? `Matched ${escapeHtml(String(d.cohortSize))} entities · token amount ${escapeHtml(fmtDeltaPct(d.amountChangePct))}` : "Holder momentum unavailable: comparable successful observations are required."}</p>${d?.status === "comparable" ? `<p>${escapeHtml(d.note)}${d.reducedEntities?.length ? ` Reduced: ${escapeHtml(d.reducedEntities.join(", "))}.` : ""}${d.increasedEntities?.length ? ` Increased: ${escapeHtml(d.increasedEntities.join(", "))}.` : ""}</p>` : ""}${t?.dataChanged ? '<p class="empty-note">Observation coverage or valuation evidence changed. Score movement includes a change in the measurement.</p>' : ""}</section>`;
+  return `<section class="trajectory-summary" aria-label="Score trajectory"><strong>${escapeHtml(t?.phase || "More completed observations needed")}</strong><span>Speed ${escapeHtml(rate)}</span><span>Acceleration ${escapeHtml(acceleration)}</span>${t?.dataChanged ? '<p class="empty-note">Observation coverage or valuation evidence changed.</p>' : ""}</section>`;
 }
 
 function buildScoreTrendPanel(tokenKey) {
@@ -941,7 +945,6 @@ function buildScoreTrendPanel(tokenKey) {
       <div class="trend-panel__header">
         <div>
           <h3>Score Trend</h3>
-          <p>Showing ${visiblePoints.length} of ${points.length} snapshot point${points.length === 1 ? "" : "s"} through snapshot #${escapeHtml(state.selectedSnapshotId)} · all points recalculated with current ${escapeHtml(latest.scoreVersion || "scoring")} rules</p>
         </div>
         <div class="trend-stats">
           <span>${matchesSelectedSnapshot ? escapeHtml(fmtScore(latest.score)) : `Last recorded #${escapeHtml(latest.snapshotId)}: ${escapeHtml(fmtScore(latest.score))}`}</span>
@@ -1548,7 +1551,7 @@ function showChartTooltip(dot, event) {
 
   els.chartTooltip.innerHTML = `
     <div class="chart-tooltip__header">
-      <strong>Snapshot #${escapeHtml(point.snapshotId)}</strong>
+      <strong>Snapshot #${escapeHtml(point.snapshotId)}${point.snapshotStatus && point.snapshotStatus !== "success" ? ` · ${escapeHtml(point.snapshotStatus)}` : ""}</strong>
       <span>${escapeHtml(fmtDate(getPointTime(point)))}</span>
     </div>
     <div class="chart-tooltip__score">
@@ -1734,5 +1737,13 @@ els.favoriteEntityInput.addEventListener("keydown", (event) => {
 
 els.initialLoadingRetry.addEventListener("click", () => void loadInitialDashboard());
 document.addEventListener("visibilitychange", () => void refreshFavoriteEntitiesOnReturn());
+
+// Resize only the open chart; avoid rerendering the entire holdings table.
+globalThis.addEventListener?.("resize", () => {
+  if (!state.openTokenKey || state.activeDrilldownTab !== "trend") return;
+  const chart = document.querySelector(".score-chart");
+  const points = state.scoreHistory.get(state.openTokenKey);
+  if (chart && points?.length) chart.outerHTML = buildScoreChart(getVisibleTrendPoints(points), state.openTokenKey);
+});
 
 init();
