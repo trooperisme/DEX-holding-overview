@@ -461,12 +461,17 @@ app.post("/api/blacklist/restore", async (req, res) => {
   }
 });
 
+const manualRefreshUrl = process.env.VERCEL
+  ? "https://github.com/trooperisme/DEX-holding-overview/actions/workflows/dex-refresh.yml"
+  : null;
+
 app.get("/api/refresh/status", (_req, res) => {
   const currentJob = refreshJobs.getCurrent();
   if (currentJob) {
     const latestJob = refreshJobs.getLatest();
     res.json({
       ok: true,
+      manualRefreshUrl,
       refreshRunning: Boolean(currentJob.running),
       currentJob,
       latestJob,
@@ -485,6 +490,7 @@ app.get("/api/refresh/status", (_req, res) => {
           : null;
       res.json({
         ok: true,
+        manualRefreshUrl,
         refreshRunning: Boolean(snapshotState.runningSnapshot),
         currentJob: snapshotState.runningSnapshot ? persistedJob : null,
         latestJob: persistedJob,
@@ -498,6 +504,13 @@ app.get("/api/refresh/status", (_req, res) => {
 });
 
 app.post("/api/refresh", async (req, res) => {
+  if (manualRefreshUrl) {
+    res.status(503).json({
+      error: "This refresh takes longer than Vercel's function limit. Run the GitHub Actions workflow instead.",
+      manualRefreshUrl,
+    });
+    return;
+  }
   if (!process.env.FIRECRAWL_API_KEY?.trim()) {
     res.status(503).json({ error: "Server refresh is not configured" });
     return;

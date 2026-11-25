@@ -251,7 +251,7 @@ const CHAIN_ID_MAP: Record<number, string> = {
   59144: "linea",
   81457: "blast",
   34443: "mode",
-  999: "hyperliquid",
+  999: "hyperevm",
   1151111081: "solana",
 };
 
@@ -263,9 +263,9 @@ const NETWORK_NAME_MAP: Record<string, string> = {
   "bnb chain": "bsc",
   ethereum: "eth",
   gnosis: "xdai",
-  hyperevm: "hyperliquid",
-  "hyper evm": "hyperliquid",
-  "hyperliquid evm": "hyperliquid",
+  hyperevm: "hyperevm",
+  "hyper evm": "hyperevm",
+  "hyperliquid evm": "hyperevm",
   linea: "linea",
   mode: "mode",
   optimism: "optimism",

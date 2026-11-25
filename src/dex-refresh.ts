@@ -1,13 +1,8 @@
-import { canonicalAddress, fetchSnapshotMarketCaps, marketCapTokenKey, selectMarketCap } from "./market-cap";
-import {
-  fetchGeckoTerminalMarketData,
-  type GeckoTerminalMarketData,
-  toGeckoTerminalNetworkId,
-} from "./geckoterminal";
 import { loadTrackedEntities } from "./entities";
 import { getCieloProviderConfig, getProviderLabel } from "./holdings-provider";
 import { resolveWorkspacePaths } from "./runtime-paths";
 import { createStorage } from "./storage";
+import { enrichSnapshotMarketData } from "./snapshot-market-evidence";
 import { runHoldingSnapshotEntities } from "./holding-snapshot-run";
 import { throwIfAborted } from "./refresh-support";
 import {
@@ -49,90 +44,6 @@ function emitProgress(callbacks: RefreshCallbacks, partial: Partial<RefreshProgr
   callbacks.onProgress?.(createProgressState(partial));
 }
 
-async function enrichSnapshotMarketData(options: {
-  storage: ReturnType<typeof createStorage>;
-  snapshotId: number;
-  totalEntities: number;
-  signal?: AbortSignal;
-  callbacks: RefreshCallbacks;
-}): Promise<{ attempted: number; enriched: number; failed: number }> {
-  const snapshotTokens = (await options.storage.getSnapshotTokensForEnrichment(options.snapshotId, 111, 1))
-    .filter((token) => token.tokenAddress)
-    .slice(0, options.totalEntities <= 1 ? 25 : undefined);
-
-  if (!snapshotTokens.length) {
-    emitLog(options.callbacks, "info", "No enrichable token contracts found for GeckoTerminal market-data lookup.");
-    return { attempted: 0, enriched: 0, failed: 0 };
-  }
-
-  emitLog(
-    options.callbacks,
-    "info",
-    `Enriching ${snapshotTokens.length} unique tokens with GeckoTerminal pool data and CoinGecko/CoinMarketCap MCAP checks.`,
-  );
-
-  let marketDataByTokenAddress: Map<string, GeckoTerminalMarketData>;
-  try {
-    marketDataByTokenAddress = await fetchGeckoTerminalMarketData(
-      snapshotTokens.map((token) => ({
-        tokenAddress: token.tokenAddress!,
-        chainId: token.chainId,
-        networkName: token.networkName,
-      })),
-    );
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    emitLog(options.callbacks, "warning", `GeckoTerminal enrichment skipped: ${message}`);
-    marketDataByTokenAddress = new Map();
-  }
-
-  throwIfAborted(options.signal);
-  const capQuotes = await fetchSnapshotMarketCaps(snapshotTokens.map(token => ({ tokenAddress: token.tokenAddress!, chainId: token.chainId, networkName: token.networkName })));
-  let enriched = 0;
-  let failed = 0;
-  let marketCapsFound = 0;
-  let tokenAgesFound = 0;
-  for (const token of snapshotTokens) {
-    if (options.signal?.aborted) {
-      throw new DOMException("Refresh canceled", "AbortError");
-    }
-
-    const geckoNetworkId = toGeckoTerminalNetworkId(token.chainId, token.networkName);
-    const marketData = token.tokenAddress
-      ? marketDataByTokenAddress.get(`${geckoNetworkId || "unknown"}:${canonicalAddress(token.tokenAddress)}`)
-      : null;
-
-    const external = capQuotes.get(marketCapTokenKey({ tokenAddress: token.tokenAddress!, chainId: token.chainId, networkName: token.networkName }));
-    if (!marketData && !external?.marketCap && external?.marketCapEvidence.status !== "conflict") {
-      failed += 1;
-      emitLog(options.callbacks, "warning", `GeckoTerminal market-data lookup returned no token data for ${token.tokenSymbol}.`);
-      continue;
-    }
-
-    const quote = external?.marketCapEvidence.status === "conflict" || external?.marketCap != null
-      ? external
-      : selectMarketCap(null, null, new Date().toISOString(), marketData?.marketCap || null);
-    const enrichedData = { liquidityUsd: null, volume24h: null, txns24h: null, tokenAgeHours: null, ...marketData, ...quote };
-    await options.storage.updateSnapshotTokenMarketData(options.snapshotId, token.tokenKey, enrichedData);
-    enriched += 1;
-    if (enrichedData.marketCap != null) marketCapsFound += 1;
-    if (enrichedData.tokenAgeHours != null) tokenAgesFound += 1;
-  }
-
-  emitLog(
-    options.callbacks,
-    failed > 0 || marketCapsFound < snapshotTokens.length || tokenAgesFound < snapshotTokens.length ? "warning" : "success",
-    failed > 0
-      ? `GeckoTerminal enrichment finished: ${enriched}/${snapshotTokens.length} tokens with pair data, ${failed} missing pair data; market cap ${marketCapsFound}/${snapshotTokens.length}, token age ${tokenAgesFound}/${snapshotTokens.length}.`
-      : `GeckoTerminal enrichment finished: ${enriched}/${snapshotTokens.length} tokens with pair data; market cap ${marketCapsFound}/${snapshotTokens.length}, token age ${tokenAgesFound}/${snapshotTokens.length}.`,
-  );
-
-  return {
-    attempted: snapshotTokens.length,
-    enriched,
-    failed,
-  };
-}
 
 export async function runDexRefresh(options: {
   cwd?: string;
