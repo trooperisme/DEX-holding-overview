@@ -1,7 +1,7 @@
-import { buildObservationIndex, contextFromObservations } from "./score-observations";
+import { buildObservationIndex } from "./score-observations";
 import { MarketCapEvidence, legacyMarketCapEvidence } from "./market-cap-types";
 import { resolveWorkspacePaths } from "./runtime-paths";
-import { withOpportunityScore } from "./scoring";
+import { historyObservationIds, scoreHistoryRows, scoreOverviewRows } from "./score-read-model";
 import { createPostgresStorage } from "./storage-postgres";
 import { SnapshotTokenForEnrichment, SnapshotUpdate, StorageAdapter } from "./storage-types";
 import { normalizeTokenName } from "./token-name";
@@ -891,7 +891,7 @@ function createSqliteStorage(cwd: string): StorageAdapter {
       const convictionByToken = entityConvictionByToken(snapshotId, minBalanceUsd);
       const previousIds = (db.prepare("SELECT id FROM holding_snapshots WHERE id < ? AND status = 'success' ORDER BY id DESC LIMIT 2").all(snapshotId) as Array<{ id: number }>).map(s => s.id);
       const scoreState = loadScoreState([snapshotId, ...previousIds], favoriteEntityKeys);
-      return rows.map((row) => {
+      const normalizedRows = rows.map((row) => {
         const normalized = {
           ...row,
           favoriteEntityCount: Number(row.favoriteEntityCount || 0),
@@ -900,11 +900,10 @@ function createSqliteStorage(cwd: string): StorageAdapter {
           tokenAmount: Number(row.tokenAmount || 0),
           liquidityUsd: row.liquidityUsd == null ? null : Number(row.liquidityUsd),
           entityConviction: convictionByToken.get(row.tokenKey) || 1,
-          marketCapEvidence: scoreState.evidence.get(`${snapshotId}:${row.tokenKey}`),
         };
-        const context = contextFromObservations(scoreState.observations, snapshotId, row.tokenKey, previousIds, favoriteEntityKeys);
-        return withOpportunityScore(normalized, context);
+        return normalized;
       });
+      return scoreOverviewRows(normalizedRows, snapshotId, previousIds, favoriteEntityKeys, scoreState);
     },
 
     getTokenHolders(snapshotId: number, tokenKey: string, minBalanceUsd = 111): TokenHolderRow[] {
@@ -1000,26 +999,14 @@ function createSqliteStorage(cwd: string): StorageAdapter {
       const successfulIds = (db.prepare(
         "SELECT id FROM holding_snapshots WHERE status = 'success' AND (? IS NULL OR id <= ?) ORDER BY id ASC",
       ).all(asOfSnapshotId, asOfSnapshotId) as Array<{ id: number }>).map((snapshot) => snapshot.id);
-      const neededIds = [...new Set(rows.flatMap(row => [row.snapshotId, ...successfulIds.filter(id => id < row.snapshotId).slice(-2)]))];
+      const neededIds = historyObservationIds(rows, successfulIds);
       const scoreState = loadScoreState(neededIds, favoriteEntityKeys, tokenKey);
       const convictionBySnapshot = entityConvictionForTokenAtSnapshots(
         [...new Set(rows.map((row) => row.snapshotId))],
         tokenKey,
         minBalanceUsd,
       );
-      const scoredRows = rows.map((row) => {
-        const previousIds = successfulIds.filter((id) => id < row.snapshotId).slice(-2).reverse();
-        const normalized = {
-          ...row,
-          favoriteEntityCount: Number(row.favoriteEntityCount || 0),
-          favoriteHoldingsUsd: Number(row.favoriteHoldingsUsd || 0),
-          liquidityUsd: row.liquidityUsd == null ? null : Number(row.liquidityUsd),
-          entityConviction: convictionBySnapshot.get(row.snapshotId) || 1,
-          marketCapEvidence: scoreState.evidence.get(`${row.snapshotId}:${tokenKey}`),
-        };
-        const scored = withOpportunityScore(normalized, contextFromObservations(scoreState.observations, row.snapshotId, tokenKey, previousIds, favoriteEntityKeys));
-        return scored;
-      });
+      const scoredRows = scoreHistoryRows(rows, successfulIds, favoriteEntityKeys, convictionBySnapshot, scoreState);
       return historyLimit == null ? scoredRows : scoredRows.slice(-historyLimit);
     },
 

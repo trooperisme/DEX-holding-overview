@@ -1,7 +1,7 @@
-import { buildObservationIndex, contextFromObservations } from "./score-observations";
+import { buildObservationIndex } from "./score-observations";
 import { MarketCapEvidence, legacyMarketCapEvidence } from "./market-cap-types";
 import { Pool, PoolClient } from "pg";
-import { withOpportunityScore } from "./scoring";
+import { historyObservationIds, scoreHistoryRows, scoreOverviewRows } from "./score-read-model";
 import {
   EntityFetchRunRecord,
   EntityRecord,
@@ -313,8 +313,8 @@ function mapEntity(row: any): EntityRecord {
   };
 }
 
-function mapOverview(row: any): TokenOverviewRow {
-  return withOpportunityScore({
+function mapOverview(row: any): Omit<TokenOverviewRow, "score"> {
+  return {
     tokenKey: row.token_key,
     tokenSymbol: row.token_symbol,
     tokenName: row.token_name,
@@ -333,7 +333,7 @@ function mapOverview(row: any): TokenOverviewRow {
     txns24h: numberOrNull(row.txns_24h),
     liquidityUsd: numberOrNull(row.liquidity_usd),
     entityConviction: Number(row.entity_conviction || 1),
-  });
+  };
 }
 
 export function createPostgresStorage(): StorageAdapter {
@@ -909,12 +909,8 @@ export function createPostgresStorage(): StorageAdapter {
       const mappedRows = result.rows.map((row) => ({
         ...mapOverview(row),
         entityConviction: convictionByToken.get(row.token_key) || 1,
-        marketCapEvidence: scoreState.evidence.get(`${snapshotId}:${row.token_key}`),
       }));
-      return mappedRows.map((row) => {
-        const context = contextFromObservations(scoreState.observations, snapshotId, row.tokenKey, previousIds, favoriteEntityKeys);
-        return withOpportunityScore(row, context);
-      });
+      return scoreOverviewRows(mappedRows, snapshotId, previousIds, favoriteEntityKeys, scoreState);
     },
 
     async getTokenHolders(snapshotId: number, tokenKey: string, minBalanceUsd = 111): Promise<TokenHolderRow[]> {
@@ -1034,24 +1030,14 @@ export function createPostgresStorage(): StorageAdapter {
         [asOfSnapshotId],
       );
       const successfulIds = successfulSnapshots.rows.map((snapshot) => Number(snapshot.id));
-      const neededIds = [...new Set(rows.flatMap(row => [row.snapshotId, ...successfulIds.filter(id => id < row.snapshotId).slice(-2)]))];
+      const neededIds = historyObservationIds(rows, successfulIds);
       const scoreState = await loadScoreState(neededIds, favoriteEntityKeys, tokenKey);
       const convictionBySnapshot = await getEntityConvictionForTokenAtSnapshots(
         [...new Set(rows.map((row) => row.snapshotId))],
         tokenKey,
         minBalanceUsd,
       );
-      const scoredRows: TokenScorePoint[] = [];
-      for (const row of rows) {
-        const previousIds = successfulIds.filter((id) => id < row.snapshotId).slice(-2).reverse();
-        const normalized = {
-          ...row,
-          entityConviction: convictionBySnapshot.get(row.snapshotId) || 1,
-          marketCapEvidence: scoreState.evidence.get(`${row.snapshotId}:${tokenKey}`),
-          favoriteEntityNames: [],
-        };
-        scoredRows.push(withOpportunityScore(normalized, contextFromObservations(scoreState.observations, row.snapshotId, tokenKey, previousIds, favoriteEntityKeys)));
-      }
+      const scoredRows = scoreHistoryRows(rows, successfulIds, favoriteEntityKeys, convictionBySnapshot, scoreState);
       return historyLimit == null ? scoredRows : scoredRows.slice(-historyLimit);
     },
 

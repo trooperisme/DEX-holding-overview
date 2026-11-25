@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { marketDataFromToken } from "./geckoterminal";
+import { marketDataFromToken, toGeckoTerminalNetworkId } from "./geckoterminal";
+
+test("HyperEVM uses GeckoTerminal's hyperevm network id", () => {
+  assert.equal(toGeckoTerminalNetworkId(999, "HyperEVM"), "hyperevm");
+  assert.equal(toGeckoTerminalNetworkId(null, "HyperEVM"), "hyperevm");
+  assert.equal(toGeckoTerminalNetworkId(null, "Hyperliquid EVM"), "hyperevm");
+});
 test("GeckoTerminal never substitutes FDV and pool age does not reset to the deepest pool", () => {
   const now = Date.now();
   const token = {

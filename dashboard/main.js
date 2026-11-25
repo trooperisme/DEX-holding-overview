@@ -64,6 +64,8 @@ const state = {
   favoriteEntities: [],
   savingFavorites: false,
   refreshJob: null,
+  manualRefreshUrl: null,
+  workflowWatchStartedAt: null,
   refreshPollTimer: null,
   marketRegime: null,
 };
@@ -557,13 +559,13 @@ function stopRefreshPolling() {
   }
 }
 
-function startRefreshPolling() {
+function startRefreshPolling(intervalMs = 1400) {
   if (state.refreshPollTimer) return;
   state.refreshPollTimer = window.setInterval(() => {
     syncRefreshStatus({ silent: true }).catch(() => {
       /* handled in syncRefreshStatus */
     });
-  }, 1400);
+  }, intervalMs);
 }
 
 function renderRefreshActivity() {
@@ -594,10 +596,12 @@ function renderRefreshActivity() {
   els.refreshButton.disabled = running;
   els.cancelButton.hidden = !running;
   els.cancelButton.disabled = !running;
-  els.refreshButton.textContent = running ? "Running..." : "Run Analysis";
+  els.refreshButton.textContent = running ? "Running..." : state.manualRefreshUrl ? "Run on GitHub" : "Run Analysis";
 
   if (!job) {
-    els.activitySubtitle.textContent = "Run the refresh and watch live progress here.";
+    els.activitySubtitle.textContent = state.manualRefreshUrl
+      ? "Use GitHub Actions for manual refresh; this run exceeds Vercel's time limit."
+      : "Run the refresh and watch live progress here.";
     els.logStream.innerHTML = '<div class="empty-note">No refresh logs yet.</div>';
     return;
   }
@@ -638,14 +642,20 @@ function renderRefreshActivity() {
 
 async function syncRefreshStatus(options = {}) {
   const payload = await fetchJson("/api/refresh/status");
+  state.manualRefreshUrl = payload.manualRefreshUrl || null;
   const nextJob = payload.currentJob || payload.job || payload.latestJob || null;
   const wasRunning = Boolean(state.refreshJob?.running);
   state.refreshJob = nextJob;
   renderRefreshActivity();
 
   if (nextJob?.running) {
+    if (state.workflowWatchStartedAt) {
+      state.workflowWatchStartedAt = null;
+      stopRefreshPolling();
+    }
     startRefreshPolling();
-  } else {
+  } else if (!state.workflowWatchStartedAt || Date.now() - state.workflowWatchStartedAt > 30 * 60_000) {
+    state.workflowWatchStartedAt = null;
     stopRefreshPolling();
   }
 
@@ -1346,6 +1356,14 @@ async function loadScoreHistory(tokenKey) {
 }
 
 async function handleRefresh() {
+  if (state.manualRefreshUrl) {
+    window.open(state.manualRefreshUrl, "_blank", "noopener,noreferrer");
+    setBanner("Run the DEX holdings refresh workflow in GitHub Actions. This page will watch for a new run for 30 minutes.", "warning");
+    state.workflowWatchStartedAt = Date.now();
+    stopRefreshPolling();
+    startRefreshPolling(20_000);
+    return;
+  }
   setBanner("Refresh started. Watching live progress below...", "warning");
 
   try {
