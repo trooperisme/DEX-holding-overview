@@ -7,7 +7,7 @@ function dashboard(source?: string) {
   const node = { addEventListener() {}, value: "", classList: { add() {}, remove() {} } };
   const nodes = new Map();
   const getNode = (id: string) => { if (!nodes.has(id)) nodes.set(id, {...node}); return nodes.get(id); };
-  const context = vm.createContext({ document: { getElementById: getNode, querySelector: () => node, querySelectorAll: () => [], addEventListener() {} }, Intl, console, URLSearchParams, DOMException });
+  const context = vm.createContext({ window: { createFullScanDialog: () => ({ render() {}, open() {} }) }, document: { getElementById: getNode, querySelector: () => node, querySelectorAll: () => [], addEventListener() {} }, Intl, console, URLSearchParams, DOMException });
   vm.runInContext((source || fs.readFileSync(path.resolve(__dirname, "../dashboard/main.js"), "utf8")).replace(/\ninit\(\);\s*$/, ""), context);
   return context;
 }

@@ -11,6 +11,7 @@
       } catch {}
     </script>
     <link rel="stylesheet" href="/dashboard/styles.css?v=20261123-score-v41-release-3" />
+    <link rel="stylesheet" href="/dashboard/scan-dialog.css?v=20261126-1" />
   </head>
   <body class="zagreb-dashboard">
     <section class="initial-loading-screen" id="initial-loading-screen" role="status" aria-live="polite" aria-busy="true">
@@ -53,7 +54,7 @@
           </div>
           <div class="hero-action-stack">
             <button class="action-button action-button--primary" id="refresh-button" type="button">
-              Analysis
+              Full Scan
             </button>
             <a class="action-button action-button--blacklist" href="/dashboard/blacklist.html">Blacklist</a>
             <button class="action-button action-button--theme" id="theme-toggle" type="button" aria-pressed="false">Dark mode</button>
@@ -190,6 +191,7 @@
     </main>
 
     <div id="chart-tooltip" class="chart-tooltip" hidden></div>
+    <script src="/dashboard/scan-dialog.js?v=20261126-1" defer></script>
     <script src="/dashboard/main.js?v=20261123-score-v41-release-2" defer></script>
   </body>
 </html>

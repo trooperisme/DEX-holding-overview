@@ -7,6 +7,7 @@ import express from "express";
 import { createAuthRouter, createPasswordProtection } from "./auth";
 import { fetchDexScreenerMarketData } from "./dexscreener";
 import { createRefreshJobManager } from "./refresh-jobs";
+import { createBackgroundRefresh } from "./background-refresh";
 import { resolveWorkspacePaths } from "./runtime-paths";
 import { SCORE_VERSION, withOpportunityScore } from "./scoring";
 import { getLatestUsableSnapshot } from "./snapshot-selection";
@@ -26,6 +27,7 @@ const app = express();
 const cwd = process.cwd();
 const paths = resolveWorkspacePaths(cwd);
 const refreshJobs = createRefreshJobManager(cwd);
+const backgroundRefresh = createBackgroundRefresh();
 
 app.disable("x-powered-by");
 app.set("trust proxy", 1);
@@ -477,18 +479,21 @@ app.get("/api/refresh/status", (_req, res) => {
 
   const storage = createStorage(cwd);
   reconcileSnapshots(storage, false)
-    .then((snapshotState) => {
+    .then(async (snapshotState) => {
       const persistedJob = snapshotState.runningSnapshot
         ? snapshotToRefreshJob(snapshotState.runningSnapshot)
         : snapshotState.latest
           ? snapshotToRefreshJob(snapshotState.latest)
           : null;
-      res.json({
+      const backgroundJob = process.env.VERCEL ? await backgroundRefresh.status(snapshotState.snapshots) : null;
+      const job = backgroundJob || persistedJob;
+      res.set("Cache-Control", "no-store").json({
         ok: true,
-        refreshRunning: Boolean(snapshotState.runningSnapshot),
-        currentJob: snapshotState.runningSnapshot ? persistedJob : null,
-        latestJob: persistedJob,
-        job: persistedJob,
+        manualScanConfigured: !process.env.VERCEL || backgroundRefresh.configured(),
+        refreshRunning: Boolean(job?.running),
+        currentJob: job?.running ? job : null,
+        latestJob: job,
+        job,
       });
     })
     .catch((error) => sendServerError(res, error))
@@ -498,6 +503,21 @@ app.get("/api/refresh/status", (_req, res) => {
 });
 
 app.post("/api/refresh", async (req, res) => {
+  if (process.env.VERCEL) {
+    if (!process.env.DATABASE_URL?.trim() || !backgroundRefresh.configured()) {
+      res.status(503).json({ error: "Manual scan needs the background worker configured on Vercel." });
+      return;
+    }
+    const storage = createStorage(cwd);
+    try {
+      const state = await reconcileSnapshots(storage, false);
+      const job = await backgroundRefresh.start(state.snapshots);
+      res.status(202).set("Cache-Control", "no-store").json({ ok: true, job });
+    } catch (error) {
+      sendServerError(res, error);
+    } finally { await storage.close(); }
+    return;
+  }
   if (!process.env.FIRECRAWL_API_KEY?.trim()) {
     res.status(503).json({ error: "Server refresh is not configured" });
     return;

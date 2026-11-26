@@ -65,8 +65,22 @@ const state = {
   savingFavorites: false,
   refreshJob: null,
   refreshPollTimer: null,
+  refreshStatusPromise: null,
+  refreshStarting: false,
+  refreshError: "",
   marketRegime: null,
 };
+
+const scanDialog = window.createFullScanDialog({
+  onViewSnapshot: async (snapshotId) => {
+    await loadSnapshots();
+    state.selectedSnapshotId = Number(snapshotId);
+    clearOpenRows();
+    renderSnapshots();
+    updateSummary(state.snapshots.find(item => item.id === state.selectedSnapshotId));
+    if (!await loadOverview()) throw new Error("Could not load the new snapshot. Please retry.");
+  },
+});
 
 function escapeHtml(value) {
   return String(value ?? "")
@@ -552,22 +566,23 @@ function getJobStatusTone(status) {
 
 function stopRefreshPolling() {
   if (state.refreshPollTimer) {
-    window.clearInterval(state.refreshPollTimer);
+    window.clearTimeout(state.refreshPollTimer);
     state.refreshPollTimer = null;
   }
 }
 
 function startRefreshPolling() {
   if (state.refreshPollTimer) return;
-  state.refreshPollTimer = window.setInterval(() => {
-    syncRefreshStatus({ silent: true }).catch(() => {
-      /* handled in syncRefreshStatus */
-    });
-  }, 1400);
+  state.refreshPollTimer = window.setTimeout(() => {
+    state.refreshPollTimer = null;
+    if (document.hidden) { startRefreshPolling(); return; }
+    void syncRefreshStatus({ silent: true }).catch(() => {});
+  }, state.refreshJob?.running ? 5000 : 30000);
 }
 
 function renderRefreshActivity() {
   const job = state.refreshJob;
+  scanDialog.render(job, { starting: state.refreshStarting, error: state.refreshError });
   const status = job?.progress?.status || "idle";
   const running = Boolean(job?.running);
   const tone = getJobStatusTone(status);
@@ -591,10 +606,10 @@ function renderRefreshActivity() {
   els.jobProgressLabel.textContent = running ? currentLabel : job ? `Last run: ${status.toUpperCase()}` : "No refresh running.";
   els.jobProgressCount.textContent = total ? `${completed}/${total} entities · ${failed} failed · ${totalRows} holdings` : "0/0 entities";
   els.jobProgressFill.style.width = `${percent}%`;
-  els.refreshButton.disabled = running;
-  els.cancelButton.hidden = !running;
-  els.cancelButton.disabled = !running;
-  els.refreshButton.textContent = running ? "Running..." : "Run Analysis";
+  // Full Scan always stays available to reopen progress. Closing the dialog is
+  // deliberately independent of cancellation; scheduled workers run elsewhere.
+  els.cancelButton.hidden = true;
+  els.cancelButton.disabled = true;
 
   if (!job) {
     els.activitySubtitle.textContent = "Run the refresh and watch live progress here.";
@@ -613,9 +628,6 @@ function renderRefreshActivity() {
             ? "Refresh canceled."
             : job.progress.errorMessage || "Refresh failed.";
   els.activitySubtitle.textContent = summary;
-  if (running) {
-    els.heroMeta.textContent = `Refreshing ${currentLabel}. ${completed}/${total || "?"} entities complete · ${failed} failed.`;
-  }
 
   const logs = Array.isArray(job.logs) ? job.logs.slice(-80) : [];
   els.logStream.innerHTML = logs.length
@@ -636,28 +648,30 @@ function renderRefreshActivity() {
   }
 }
 
-async function syncRefreshStatus(options = {}) {
+function syncRefreshStatus(options = {}) {
+  if (state.refreshStatusPromise) return state.refreshStatusPromise;
+  state.refreshStatusPromise = readRefreshStatus(options).catch(error => {
+    state.refreshError = error.message || "Could not read scan progress.";
+    renderRefreshActivity();
+    throw error;
+  }).finally(() => {
+    state.refreshStatusPromise = null;
+    startRefreshPolling();
+  });
+  return state.refreshStatusPromise;
+}
+
+async function readRefreshStatus(options = {}) {
   const payload = await fetchJson("/api/refresh/status");
   const nextJob = payload.currentJob || payload.job || payload.latestJob || null;
   const wasRunning = Boolean(state.refreshJob?.running);
   state.refreshJob = nextJob;
+  state.refreshError = "";
   renderRefreshActivity();
 
-  if (nextJob?.running) {
-    startRefreshPolling();
-  } else {
-    stopRefreshPolling();
-  }
-
   if (wasRunning && !nextJob?.running) {
-    clearOpenRows();
-    if (nextJob?.progress?.snapshotId) {
-      state.selectedSnapshotId = Number(nextJob.progress.snapshotId) || state.selectedSnapshotId;
-    }
+    // Update the choices, but keep the historical snapshot the user is reading.
     await loadSnapshots();
-    if (state.selectedSnapshotId) {
-      await loadOverview();
-    }
     setBanner(
       nextJob?.progress?.status === "success"
         ? `Refresh complete. Snapshot #${nextJob.progress.snapshotId} is ready.`
@@ -1346,17 +1360,30 @@ async function loadScoreHistory(tokenKey) {
 }
 
 async function handleRefresh() {
-  setBanner("Refresh started. Watching live progress below...", "warning");
-
+  scanDialog.open();
+  if (state.refreshStarting || state.refreshJob?.running) {
+    void syncRefreshStatus({ silent: true }).catch(() => {});
+    return;
+  }
+  state.refreshStarting = true;
+  state.refreshError = "";
+  renderRefreshActivity();
   try {
-    await fetchJson("/api/refresh", {
-      method: "POST",
-    });
-    clearOpenRows();
-    await syncRefreshStatus({ silent: true });
+    // Check again server-side so a scheduled run or another device is reused.
+    const current = await syncRefreshStatus({ silent: true });
+    if (current?.running) return;
+    const payload = await fetchJson("/api/refresh", { method: "POST" });
+    state.refreshJob = payload.job || payload.currentJob || null;
+    state.refreshError = "";
+    stopRefreshPolling();
     startRefreshPolling();
   } catch (error) {
+    // A rejected/uncertain dispatch must not be retried automatically.
+    state.refreshError = error.message;
     setBanner(error.message, "danger");
+  } finally {
+    state.refreshStarting = false;
+    renderRefreshActivity();
   }
 }
 
@@ -1738,6 +1765,12 @@ els.favoriteEntityInput.addEventListener("keydown", (event) => {
 
 els.initialLoadingRetry.addEventListener("click", () => void loadInitialDashboard());
 document.addEventListener("visibilitychange", () => void refreshFavoriteEntitiesOnReturn());
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden && els.initialLoadingScreen.hidden) {
+    stopRefreshPolling();
+    void syncRefreshStatus({ silent: true }).catch(() => {});
+  }
+});
 
 // Resize only the open chart; avoid rerendering the entire holdings table.
 globalThis.addEventListener?.("resize", () => {

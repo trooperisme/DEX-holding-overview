@@ -1,0 +1,66 @@
+/* Shared Full Scan progress dialog. */
+.scan-status { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 16px; padding: 16px 20px; color: #17150f; border: 2px solid #17150f; background: #c6e9b6; }
+.scan-status[hidden] { display: none; }
+.scan-status > div { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; }
+#scan-status-copy { font-size: 13px; }
+.scan-status button { flex-shrink: 0; border: 0; border-bottom: 1px solid currentColor; padding: 4px 0; background: transparent; color: inherit; cursor: pointer; font: inherit; font-size: 13px; font-weight: 700; }
+.scan-dot { width: 8px; height: 8px; background: #28663a; border-radius: 50%; box-shadow: 0 0 0 4px #28663a1a; }
+.scan-status[data-state="running"] .scan-dot { animation: scan-pulse 2s infinite; }
+.scan-dialog { --scan-ink: #23251e; width: min(540px, calc(100% - 28px)); max-height: calc(100dvh - 28px); margin: auto; padding: 0; overflow: auto; color: var(--scan-ink); background: #f7efdd; border: 2px solid var(--scan-ink); box-shadow: 8px 8px 0 #17150f40; font-family: 'Space Grotesk', sans-serif; }
+.scan-dialog::backdrop { background: #11160ec9; backdrop-filter: blur(4px); }
+.scan-dialog-header { display: flex; align-items: center; justify-content: space-between; padding: 10px 18px; border-bottom: 1px solid var(--scan-ink); }
+.scan-kicker { font-size: 11px; font-weight: 700; letter-spacing: .08em; }
+.scan-kicker span { margin: 0 8px; opacity: .5; }
+.scan-close { display: grid; place-items: center; width: 34px; height: 34px; font: inherit; font-size: 26px; line-height: 1; background: transparent; color: inherit; border: 1px solid var(--scan-ink); cursor: pointer; }
+.scan-close:hover { background: #c6e9b6; }
+.scan-illustration { position: relative; display: grid; place-items: center; min-height: 190px; background: #e4e9d8; border-bottom: 1px solid var(--scan-ink); }
+.scan-illustration img { display: block; width: 100%; height: 190px; object-fit: contain; }
+.scan-demo-badge { position: absolute; z-index: 1; top: 12px; left: 16px; padding: 5px 8px; background: #f7efdded; border: 1px solid var(--scan-ink); font-size: 9px; font-weight: 700; letter-spacing: .08em; }
+.scan-dialog-body { padding: 22px 26px 18px; }
+.scan-eyebrow { margin: 0 0 9px; color: #476540; font-size: 10px; font-weight: 700; letter-spacing: .12em; }
+.scan-dialog h2 { margin: 0 0 10px; font-size: clamp(25px, 5vw, 32px); line-height: 1.1; letter-spacing: -.05em; }
+#scan-description { margin: 0 0 22px; color: #625c4c; font-size: 13px; line-height: 1.6; }
+.scan-progress-heading { display: flex; justify-content: space-between; gap: 14px; align-items: end; font-size: 12px; }
+#scan-current { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#scan-percent { font-size: 21px; line-height: 1; }
+.scan-progress { height: 10px; margin: 10px 0; background: #e4d5bb; border: 1px solid var(--scan-ink); overflow: hidden; }
+#scan-progress-fill { height: 100%; width: 0; background: #659961; transition: width .5s linear; }
+.scan-metrics { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 6px; color: #625c4c; font-size: 10px; }
+.scan-steps { display: grid; gap: 10px; list-style: none; margin: 22px 0 18px; padding: 0; }
+.scan-steps li { display: flex; align-items: center; gap: 10px; color: #746e60; font-size: 12px; }
+.scan-steps li > span { display: grid; place-items: center; width: 23px; height: 23px; flex-shrink: 0; border: 1px solid #b4ad9c; font-size: 10px; }
+.scan-steps small { margin-left: auto; font-size: 10px; }
+.scan-steps [data-state="active"] { color: #23251e; font-weight: 700; }
+.scan-steps [data-state="active"] > span { background: #e2a820; border-color: #23251e; }
+.scan-steps [data-state="complete"] > span { background: #c6e9b6; color: #285b35; border-color: #285b35; }
+.scan-steps [data-state="complete"] { color: #285b35; }
+.scan-live-note { min-height: 30px; padding: 9px 0; border-top: 1px solid #cfc5af; font-size: 10px; color: #625c4c; }
+.scan-browse { display: flex; justify-content: space-between; width: 100%; margin-top: 10px; padding: 14px 16px; color: #17150f; background: #c6e9b6; border: 1px solid #17150f; font: inherit; font-size: 13px; font-weight: 700; cursor: pointer; }
+.scan-browse:hover { background: #a6d794; }
+.scan-footnote { margin: 10px 0 0; text-align: center; color: #625c4c; font-size: 9px; line-height: 1.5; }
+.scan-dialog button:focus-visible, #preview-full-scan:focus-visible, #scan-status-open:focus-visible { outline: 3px solid #976100; outline-offset: 3px; }
+@keyframes scan-pulse { 50% { box-shadow: 0 0 0 7px #28663a00; } }
+@media (max-width: 600px) {
+  .scan-status { padding: 12px; align-items: start; }
+  .scan-status > div { font-size: 12px; }
+  #scan-status-copy { flex-basis: 100%; font-size: 10px; line-height: 1.5; }
+  .scan-status button { font-size: 11px; }
+  .scan-dialog { width: calc(100% - 20px); max-height: calc(100dvh - 20px); }
+  .scan-dialog-header { padding: 8px 12px; }
+  .scan-illustration, .scan-illustration img { min-height: 135px; height: 135px; }
+  .scan-dialog-body { padding: 18px; }
+  #scan-description { margin-bottom: 16px; font-size: 12px; }
+  .scan-steps { gap: 8px; margin: 16px 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .scan-dot { animation: none !important; }
+  #scan-progress-fill { transition: none; }
+}
+
+.scan-worker { display: inline-block; margin: 8px 0; color: #476540; font-size: 11px; }
+.scan-worker[hidden], .scan-view-snapshot[hidden] { display: none; }
+.scan-view-snapshot { width: 100%; padding: 14px; margin-top: 8px; border: 1px solid #17150f; background: #e2a820; color: #17150f; cursor: pointer; font: inherit; font-weight: 700; }
+.scan-progress.is-indeterminate #scan-progress-fill { animation: scan-move 1.8s ease-in-out infinite alternate; }
+.scan-status[data-state="failed"] { background: #f0d0bd; }
+@keyframes scan-move { to { transform: translateX(150%); } }
+@media (prefers-reduced-motion: reduce) { .scan-progress.is-indeterminate #scan-progress-fill { animation: none; } }

@@ -22,6 +22,8 @@ let sharedPool: Pool | null = null;
 let ownerFavoritesSchemaReady: Promise<void> | null = null;
 let trenchIndexSchemaReady: Promise<void> | null = null;
 
+export { getPool as getPostgresPool, withTransaction as withPostgresTransaction };
+
 export async function closePostgresPool(): Promise<void> {
   const pool = sharedPool;
   sharedPool = null;

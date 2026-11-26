@@ -1,4 +1,5 @@
 name: DEX holdings refresh
+run-name: ${{ inputs.requestId && format('Manual scan {0}', inputs.requestId) || 'Scheduled DEX holdings refresh' }}
 
 on:
   schedule:
@@ -6,6 +7,11 @@ on:
     - cron: "17 2 * * *"
       timezone: "Asia/Ho_Chi_Minh"
   workflow_dispatch:
+    inputs:
+      requestId:
+        description: Dashboard scan request ID
+        type: string
+        required: false
 
 concurrency:
   group: dex-holding-refresh
